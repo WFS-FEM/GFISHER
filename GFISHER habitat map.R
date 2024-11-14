@@ -44,10 +44,10 @@ habitat2.sp <- as_Spatial(habitat2)
 
 #get depth and habitat on same CRS
 print("Transforming CRS to match depth grid...")
-crs(habitat.sp); crs(habitat2.sp); crs(depth)
+#crs(habitat.sp); crs(habitat2.sp); crs(depth)
 #habitat.sp <- spTransform(habitat.sp,crs(depth))
-habitat2.sp <- spTransform(habitat2.sp,crs(depth))
-microgrid.sp <- spTransform(microgrid.sp, crs(depth))
+habitat2.sp <- spTransform(habitat2.sp,crs(depth.1min))
+microgrid.sp <- spTransform(microgrid.sp, crs(depth.1min))
 #habitat.sp <- habitat.sp[habitat.sp$MicroGrid!=" ",]
 
 
@@ -122,7 +122,8 @@ if(nrow(chk2)>0) write.csv(chk2,'hab area vs grid area.csv',row.names=F)
 
 #rasterize and make maps for ecospace---------------------------------------------------------------
 #rasterize mapping footprint
-tiff(filename=paste0(dir.gfisher,"/Mapping footprint microgrids.tiff"),height=7,width=7,units='in',res=600,compression='lzw')
+#tiff(filename=paste0(dir.gfisher,"/Mapping footprint microgrids.tiff"),height=7,width=7,units='in',res=600,compression='lzw')
+png(filename=paste0(dir.gfisher,"/Mapping footprint microgrids.png"),height=7,width=7,units='in',res=600)#,compression='lzw')
 plot(microgrid$Shape,main="Mapping Footprint (microgrids)"); map(database='state',fill=T,add=T,col='lightgray')
 dev.off()
 
@@ -137,7 +138,8 @@ microgrid.ras1[is.na(depth.1min)] <- NA
 microgrid.ras6[is.na(depth.6min)] <- NA
 microgrid.ras10[is.na(depth.10min)] <- NA
 
-tiff(filename=paste0(dir.gfisher,"/Mapping footprint plots.tiff"),height=7,width=7,units='in',res=600,compression='lzw')
+#tiff(filename=paste0(dir.gfisher,"/Mapping footprint plots.tiff"),height=7,width=7,units='in',res=600,compression='lzw')
+png(filename=paste0(dir.gfisher,"/Mapping footprint plots.png"),height=7,width=7,units='in',res=600)#,compression='lzw')
 par(mfcol=c(3,2),mar=c(1,2,4,4))
 plot(microgrid.ras1,main="Area mapped (m2)\nper 1-min grid cell"); map(database='state',fill=T,add=T,col='lightgray')
 plot(microgrid.ras1n,main="N microgrids\nper 1-min grid cell (m2)"); map(database='state',fill=T,add=T,col='lightgray')
@@ -216,76 +218,80 @@ for(i in 1:length(newhabs)){
   rm(hab.ras1, hab.ras6, hab.ras10, habpct.ras1, habpct.ras6, habpct.ras10); gc()
 }
 names(habpct2.stack1) <- names(habpct2.stack6) <- names(habpct2.stack10) <- newhabs
+newhabs
+hablabels <- c('Artificial, low relief','Artificial, medium relief','Artificial, high relief','Natural, low relief','Natural, medium relief','Natural, high relief')
 
 
 
-
-tiff(filename=paste0(dir.gfisher,"/Habitat pct area 1min.tiff"),height=7,width=7,units='in',res=600,compression='lzw')
+#tiff(filename=paste0(dir.gfisher,"/Habitat pct area 1min.tiff"),height=7,width=7,units='in',res=600,compression='lzw')
+png(filename=paste0(dir.gfisher,"/Habitat pct area 1min.png"),height=7,width=7,units='in',res=600)#,compression='lzw')
 par(mfcol=c(3,2),mar=c(3,3,3,5))
 for(i in 1:nlayers(habpct2.stack1)){
   #i=1
-  hab.i = habpct2.stack1[[i]]
+  hab.i = round(habpct2.stack1[[i]],3)
   #brks = unique(quantile(hab.ras2,c(0,seq(.8,1,.01))))
   #cols = matlab.like(n=length(brks)-1)
   #plot(hab.ras2, colNA='lightgray', main=paste(newhabs[i], 'sum'))#, col=cols, breaks=brks)
   #brks = unique(round(c(quantile(habpct.ras2,c(0,seq(.8,1,.01))),max(habpct.ras2[habpct.ras2<Inf],na.rm=T)),4))
 
-  brks = pretty(getValues(hab.i),n=50)
+  brks = c(0,sort(unique(getValues(hab.i)))[2],pretty(getValues(hab.i),n=50)[-1])
   if(length(which(brks==Inf))>0) brks = brks[-which(brks==Inf)]
   colv = c(colorRamps::matlab.like2(n=length(brks)))
-  col.bias=5
+  col.bias=2
   #if(i==1) col.bias=3
   funpal  = colorRampPalette(colv,bias=col.bias,interpolate='spline')
   cols   = funpal(length(brks)-1)
-  plot(hab.i,colNA='lightgray', main=paste(newhabs[i],'pct'), col=cols, breaks=brks,legend=T)
+  plot(hab.i,colNA='lightgray', main=paste0(hablabels[i],' %'), col=cols, breaks=brks,legend=T)
   #plot(hab.i,colNA='lightgray', main=paste(newhabs[i],'pct'))
   map(database='state',add=T, fill=T, col='lightgray')
 }
 dev.off()
 
 #----------------------------------------------------
-tiff(filename=paste0(dir.gfisher,"/Habitat pct area 6min.tiff"),height=7,width=7,units='in',res=600,compression='lzw')
+#tiff(filename=paste0(dir.gfisher,"/Habitat pct area 6min.tiff"),height=7,width=7,units='in',res=600,compression='lzw')
+png(filename=paste0(dir.gfisher,"/Habitat pct area 6min.png"),height=7,width=7,units='in',res=600)#,compression='lzw')
 par(mfcol=c(3,2),mar=c(3,3,3,5))
 for(i in 1:nlayers(habpct2.stack6)){
   #i=1
-  hab.i = habpct2.stack6[[i]]
+  hab.i = round(habpct2.stack6[[i]],3)
   #brks = unique(quantile(hab.ras2,c(0,seq(.8,1,.01))))
   #cols = matlab.like(n=length(brks)-1)
   #plot(hab.ras2, colNA='lightgray', main=paste(newhabs[i], 'sum'))#, col=cols, breaks=brks)
   #brks = unique(round(c(quantile(habpct.ras2,c(0,seq(.8,1,.01))),max(habpct.ras2[habpct.ras2<Inf],na.rm=T)),4))
   
-  brks = pretty(getValues(hab.i),n=50)
+  brks = c(0,sort(unique(getValues(hab.i)))[2],pretty(getValues(hab.i),n=50)[-1])
   if(length(which(brks==Inf))>0) brks = brks[-which(brks==Inf)]
   colv = c(colorRamps::matlab.like2(n=length(brks)))
-  col.bias=5
+  col.bias=2
   #if(i==1) col.bias=3
   funpal  = colorRampPalette(colv,bias=col.bias,interpolate='spline')
   cols   = funpal(length(brks)-1)
-  plot(hab.i,colNA='lightgray', main=paste(newhabs[i],'pct'), col=cols, breaks=brks,legend=T)
+  plot(hab.i,colNA='lightgray', main=paste0(hablabels[i],' %'), col=cols, breaks=brks,legend=T)
   #plot(hab.i,colNA='lightgray', main=paste(newhabs[i],'pct'))
   map(database='state',add=T, fill=T, col='lightgray')
 }
 dev.off()
 
 #----------------------------------------------------
-tiff(filename=paste0(dir.gfisher,"/Habitat pct area 10min.tiff"),height=7,width=7,units='in',res=600,compression='lzw')
+#tiff(filename=paste0(dir.gfisher,"/Habitat pct area 10min.tiff"),height=7,width=7,units='in',res=600,compression='lzw')
+png(filename=paste0(dir.gfisher,"/Habitat pct area 10min.png"),height=7,width=7,units='in',res=600)#,compression='lzw')
 par(mfcol=c(3,2),mar=c(3,3,3,5))
 for(i in 1:nlayers(habpct2.stack10)){
   #i=1
-  hab.i = habpct2.stack10[[i]]
+  hab.i = round(habpct2.stack10[[i]],3)
   #brks = unique(quantile(hab.ras2,c(0,seq(.8,1,.01))))
   #cols = matlab.like(n=length(brks)-1)
   #plot(hab.ras2, colNA='lightgray', main=paste(newhabs[i], 'sum'))#, col=cols, breaks=brks)
   #brks = unique(round(c(quantile(habpct.ras2,c(0,seq(.8,1,.01))),max(habpct.ras2[habpct.ras2<Inf],na.rm=T)),4))
   
-  brks = pretty(getValues(hab.i),n=50)
+  brks = c(0,sort(unique(getValues(hab.i)))[2],pretty(getValues(hab.i),n=50)[-1])
   if(length(which(brks==Inf))>0) brks = brks[-which(brks==Inf)]
   colv = c(colorRamps::matlab.like2(n=length(brks)))
-  col.bias=5
+  col.bias=2
   #if(i==1) col.bias=3
   funpal  = colorRampPalette(colv,bias=col.bias,interpolate='spline')
   cols   = funpal(length(brks)-1)
-  plot(hab.i,colNA='lightgray', main=paste(newhabs[i],'pct'), col=cols, breaks=brks,legend=T)
+  plot(hab.i,colNA='lightgray', main=paste0(hablabels[i],' %'), col=cols, breaks=brks,legend=T)
   #plot(hab.i,colNA='lightgray', main=paste(newhabs[i],'pct'))
   map(database='state',add=T, fill=T, col='lightgray')
 }
