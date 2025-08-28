@@ -10,9 +10,9 @@ library('maps')
 dir.gfisher <- getwd()
 #dir.maps <- "C:\\Users\\dchagaris\\OneDrive - University of Florida\\WFS Fisheries Ecosystem Modeling\\WFS EwE\\Ecospace\\maps\\GFISHER"
 #dir.out <- "./maps/GFISHER"
-dir.gfisher <- '/Users/daniel/Documents/GitHub/GFISHER/'
-dir.maps <- "/Users/daniel/Work/WFS_DV2/WFS-FEM/static drivers/depth/"
-dir.output<- '/Users/daniel/Work/WFS_DV2/WFS-FEM/data/GFISHER/'
+dir.gfisher <- 'C:/Users/dvilasgonzalez/Documents/GitHub/GFISHER/'
+dir.maps <- "C:/Users/dvilasgonzalez/Documents/WFS_DV2/WFS-FEM/static drivers/depth/"
+dir.output<- 'C:/Users/dvilasgonzalez/Documents/WFS_DV2/WFS-FEM/data/GFISHER/'
 file.gdb <- paste0(dir.gfisher,"/FWRI_East_Gulf_Mapping_2023.gdb")
 file.gdb.micro <- paste0(dir.gfisher,"/East_Master_Hab_data_Dissolve_byMicro_13Sept24.gdb")
 
