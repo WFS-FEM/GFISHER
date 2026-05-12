@@ -85,20 +85,6 @@ Defined in `R/GFISHER functions.R`. Renders summary figures from the ASCII raste
 ## Worked example — habitat maps from a fresh clone
 
 ```r
-# 1) Open R in the repo root
-setwd("path/to/GFISHER")
-
-# 2) Edit the USER INPUTS block at the top of process GFISHER data.R:
-#    file.gdb <- "<absolute path to your local GFISHER_EAST_Universe_2026.gdb>"
-#    res      <- 5     # or 15
-
-# 3) Run the script
-source("process GFISHER data.R")
-```
-
-Or, equivalently, call the functions yourself:
-
-```r
 library('raster')
 source(file.path('R', 'GFISHER functions.R'))
 
