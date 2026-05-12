@@ -125,6 +125,16 @@ Expected outputs in `maps/GFISHER/5min/`:
 - `Habitat prop area 5min.png`
 - `mapping footprint 5min.png`
 
+### Example output (5min)
+
+Six-panel habitat proportion figure produced by `fn.plot_GFISHER_habitats()`:
+
+![Habitat proportion area, 5min](docs/img/Habitat_prop_area_5min.png)
+
+Mapping footprint (km² of side-scan coverage per grid cell):
+
+![Mapping footprint, 5min](docs/img/mapping_footprint_5min.png)
+
 ## Notes
 
 - The geodatabase read + polygon-centroid intersection + IDW fill is the slow step (minutes at 5min resolution). Once the `.asc` outputs exist they can be reused directly.
