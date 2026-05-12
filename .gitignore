@@ -1,1 +1,11 @@
 .DS_Store
+
+# generated outputs from process GFISHER data.R
+maps/GFISHER/
+
+# large local-only inputs (user supplies their own copy of the geodatabase)
+data/*.gdb/
+data/**/*.gdb/
+
+# author scratch
+hoard/
