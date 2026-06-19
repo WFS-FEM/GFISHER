@@ -21,11 +21,14 @@ file.sizeatage <- file.path(dir.data,'size_at_age.csv')
 file.maxn = file.path(dir.data,'April2026','maxn3LABS_93to24.csv')
 file.env = file.path(dir.data,'April2026','env3LABS_93to24.csv')
 file.len = file.path(dir.data,'April2026','lens3LABS_93to24.csv')
-dir.bathy = "C:\\Users\\dchagaris\\OneDrive - University of Florida\\WFS Fisheries Ecosystem Modeling\\WFS EwE\\Ecospace\\maps\\bathymetry"
+dir.bathy <- file.path(dir.gfisher,'maps','bathymetry')
+dir.bathy.ext <- ""   # e.g. "C:/Users/<you>/OneDrive .../WFS EwE/Ecospace/maps/bathymetry"
+if(nzchar(dir.bathy.ext) && dir.exists(dir.bathy.ext)) dir.bathy <- dir.bathy.ext
 
 # res: map resolution in arc-minutes. 5 and 15 ship with the repo (see maps/bathymetry/).
 res <- 5
-file.depth <- list.files(dir.bathy,pattern=paste0('depth ',res,'min'),full.names=T)
+file.depth <- list.files(dir.bathy,pattern=paste0('depth ',res,'min'),full.names=TRUE)
+if(length(file.depth)==0) stop(paste0("No 'depth ",res,"min' raster found in ",dir.bathy))
 depth <- rast(file.depth)
 plot(depth)
 
