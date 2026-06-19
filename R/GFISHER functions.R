@@ -5,8 +5,12 @@ library('colorRamps')
 library('maps')
 library('lwgeom')
 library('gstat')
+library('raster')
+library('xlsx')
+library('reshape2')
+library('truncnorm')
 
-fn.make_gfisher_videodataset <- function(file.gfsh="..\\GFISHER\\data\\Video Count Data4ChagarisTake2.xlsx",bbox,spplist){
+fn.make_gfisher_videodataset <- function(file.maxn, file.env, file.len, bbox,spplist){
   
   #fxn arguments/inputs
   # file.gfsh = "C:\\Users\\dchagaris\\Github\\WFS-FEM\\GFISHER\\data\\Video Count Data4ChagarisTake2.xlsx"
@@ -14,122 +18,133 @@ fn.make_gfisher_videodataset <- function(file.gfsh="..\\GFISHER\\data\\Video Cou
   # spplist <- spplist
   
   #--------------------------------import and prepare data------------------------------------------
-  dat1 <- read_excel(path=file.gfsh, sheet='Count_Data')
-  dat.lf <- read_excel(path=file.gfsh, sheet='Length_Data')
-  
-  names(dat1) <- tolower(names(dat1))
+  # dat1 <- read_excel(path=file.gfsh, sheet='Count_Data')
+  # dat.lf <- read_excel(path=file.gfsh, sheet='Length_Data')
+  dat.maxn <- read.csv(file.maxn, header=T)
+  names(dat.maxn) <- tolower(names(dat.maxn))
+  dat.lf <- read.csv(file.len, header=T)
   names(dat.lf) <- tolower(names(dat.lf))
-  dat1$taxon <- tolower(gsub("_"," ",dat1$taxon))
-  dat.lf$taxon <- tolower(gsub("_"," ",dat.lf$taxon))
+  dat.env <- read.csv(file.env, header=T)
+  names(dat.env) <- tolower(names(dat.env))
+  
+  
+  #dat1$taxon <- tolower(gsub("_"," ",dat1$taxon))
+  #dat.lf$taxon <- tolower(gsub("_"," ",dat.lf$sciname))
   
   #---------------------------------------make dataset----------------------------------------------
   #filter for stations to use in analysis, trawls conducted with geographic box
-  dat2 = unique(dat1[dat1$lat_dd>=bbox[2] & dat1$lat_dd<=bbox[1] & 
-                       dat1$lon_dd>=bbox[3] & dat1$lon_dd<=bbox[4],])
-  names(dat2)
-  length(unique(dat2$reference))
-  #stations = unique(dat2[,c('reference','lab','year','month','lat_dd','lon_dd','depth','temp','space_strat','hab_strat')])
-  stations = unique(dat2[,-which(names(dat2) %in% c('taxon','maxn'))])
-  names(stations)  
-  stations$dup <- ifelse(stations$reference %in% stations$reference[which(duplicated(stations$reference))],TRUE,FALSE)
-  stations$complete <- complete.cases(stations[,c(1:8)])
-  stations <- stations[-which(stations$dup & !stations$complete),]
-  stations <- stations[-which(duplicated(stations$reference)),]
+  #use which() so rows with NA lat/lon are dropped rather than returned as phantom all-NA rows
+  keep.env = which(dat.env$lat_dd>=bbox[2] & dat.env$lat_dd<=bbox[1] &
+                   dat.env$lon_dd>=bbox[3] & dat.env$lon_dd<=bbox[4])
+  dat.env2 = unique(dat.env[keep.env,])
+  names(dat.env2)
+  length(unique(dat.env$reference))
+  length(unique(dat.env2$reference))
+  nrow(dat.env2)
+  sum(duplicated(dat.env2$reference))
+
+  #build one station record per reference (coordinates + env), preferring complete rows.
+  #NOTE: keep the 'dup'/'complete' helper columns - they are dropped by name in the merge below.
+  stations = unique(dat.env2)
+  stations$dup = stations$reference %in% stations$reference[duplicated(stations$reference)]
+  ncheck = min(8, ncol(stations))
+  stations$complete = complete.cases(stations[, seq_len(ncheck)])
+  #drop duplicate-reference rows that are incomplete, then any remaining duplicate references.
+  #guard each removal with length()>0 - `df[-integer(0),]` would otherwise wipe all rows.
+  drop1 = which(stations$dup & !stations$complete)
+  if(length(drop1)>0) stations = stations[-drop1,]
+  dup2 = which(duplicated(stations$reference))
+  if(length(dup2)>0) stations = stations[-dup2,]
   
   #--------------------------create species to model groupings key-------------------------------------------
+  #read species-group assignments and list of model groups
+  modspp  = read.xlsx(file.spplist,sheetName="spplist",stringsAsFactors=F,colIndex=1:10)
+  modgrps = read.xlsx(file.spplist,sheetName="model groups",stringsAsFactors=F,colIndex=1:4)
+  names(modspp)[1:2] = c('modnumber','modname')
+  names(modgrps)[1:2] = c('modnumber','modname')
+  spplist <- melt(modspp, id.vars=c('modnumber','modname'), measure.vars=c('species','query','og_name','class','order','family','genus'), variable.name='var',value.name='taxon')
+  spplist <- spplist[,-3]
+  spplist <- data.frame(lapply(spplist, tolower), stringsAsFactors = FALSE)
+  spplist$taxon <- ifelse(spplist$taxon=="",NA,spplist$taxon)
+  spplist <- unique(spplist)
+  spplist <- spplist[spplist$modnumber!='99',]
+  #spplist <- spplist[complete.cases(spplist),]
+  
+  ##multistanza size at age-------------------------------------------------------------------------
+  sizeatage <- read.xlsx(file.spplist,sheetName="size_at_age",stringsAsFactors=F)
+  
   #keep species included in the model
   keeptaxa = tolower(sort(unique(spplist$taxon)))
-  spp.gfsh = data.frame(taxon=sort(unique(dat2$taxon)),
-                        taxon2 = sub(" sp$","",sort(unique(dat2$taxon))),
-                        taxon3 = sapply(strsplit(sort(unique(dat2$taxon)), " "), `[`, 1))
+  names(dat.maxn)
+  spp.gfsh = data.frame(taxon=sort(unique(names(dat.maxn)[-c(1:2)])),
+                        taxon2 = sub("_sp$","",sort(unique(names(dat.maxn)[-c(1:2)]))),
+                        taxon3 = sapply(strsplit(sort(unique(names(dat.maxn)[-c(1:2)])), "_"), `[`, 1))
   spp.gfsh$match = ifelse(spp.gfsh$taxon %in% keeptaxa | spp.gfsh$taxon2 %in% keeptaxa | spp.gfsh$taxon3 %in% keeptaxa,TRUE,FALSE)
   spp.gfsh$modnumber = ifelse(spp.gfsh$taxon %in% keeptaxa, spplist$modnumber[match(spp.gfsh$taxon,spplist$taxon)],
                               ifelse(spp.gfsh$taxon2 %in% keeptaxa, spplist$modnumber[match(spp.gfsh$taxon2,spplist$taxon)],
                                      ifelse(spp.gfsh$taxon3 %in% keeptaxa, spplist$modnumber[match(spp.gfsh$taxon3,spplist$taxon)],NA)))
   
-  spp.gfsh$modnumber = ifelse(spp.gfsh$taxon=='Lutjanidae_sp',19,
-                              ifelse(spp.gfsh$taxon %in% c('Epinephelus_sp','Epinephelus_striatus'),36,spp.gfsh$modnumber))
-  spp.gfsh$modname = modgrps$modname[as.numeric(spp.gfsh$modnumber)]
+  spp.gfsh$modnumber = ifelse(spp.gfsh$taxon=='lutjanidae_sp',19,
+                              ifelse(spp.gfsh$taxon %in% c('epinephelus_sp','epinephelus_striatus'),36,spp.gfsh$modnumber))
+  spp.gfsh$modname = modgrps$modname[match(spp.gfsh$modnumber, modgrps$modnumber)]
   
-  write.csv(spp.gfsh,file.path(getwd(),'GFISHER_species_fg.csv'),row.names=F)
+  write.csv(spp.gfsh,file.path(dirname(dirname(file.maxn)),'GFISHER_species_fg.csv'),row.names=F)
   
-  #-----------------------------species freq and count----------------------------------------------
-  #frequency of occurrence
-  nsites           = length(unique(dat2$reference))
-  sppfreq           = as.data.frame(table(dat2$taxon),stringsAsFactors = F)
-  names(sppfreq)[1] = 'taxonomic'
-  sppfreq$pctO      = sppfreq$Freq/nsites
-  sppfreq           = sppfreq[order(-sppfreq$pctO),]
+  #melt video data----------------------------------------------------------------------------------
+  dat.maxn.long <- melt(dat.maxn[,-1],id.vars='reference', variable.name='sciname', value.name='maxn')
+  dat.maxn.long <- dat.maxn.long[dat.maxn.long$maxn>0,]
+  dat.maxn.long$sciname <- gsub("_"," ",as.character(dat.maxn.long$sciname))
   
-  #percent of total num
-  totmaxN         = sum(dat2$maxn)
-  sppmaxN         = aggregate(maxn~taxon,data=dat2,sum)
-  sppmaxN$pctmaxN     = sppmaxN$maxn/totmaxN
-  sppmaxN         = sppmaxN[order(-sppmaxN$pctmaxN),]
-  
-  #combine and calculate IRI
-  spp = merge(sppfreq,sppmaxN,by=1)
-  spp = spp[order(-spp$pctO),]
-  
-  #get common name
-  #spp$common = smp$common_name[match(spp$taxonomic,smp$taxonomic)]
-  
-  #output list of species names
-  getwd()
-  spp_freq <<- spp
-  write.csv(spp,paste0('GFISHER_spplist_',region,'.csv'),row.names=F)
-  
-  #------------------------------map sample locations-----------------------------------------------
-  tiff(paste0('GFISHER_sample_map_',region,'.tiff'),height=5,width=5,units='in',res=600,compression='lzw')
-  #smp       = read.csv('smpTR_dataset_WFS.csv',stringsAsFactors = F)
-  sites = unique(dat2[,c('lon_dd','lat_dd','year')])
-  yrs   = range(sites$year)
-  maps::map('state',xlim=c(bbox[3]-0.5,bbox[4]+0.5),ylim=c(bbox[2]-0.5,bbox[1]+0.5),fill=T,col='gray')
-  points(sites,pch=16,col='steelblue',cex=0.25)
-  title(main=paste0('GFISHER camera sites: ',yrs[1],'-',yrs[2]))
-  dev.off()
-  
-  #-------------------------------get size data for multistanza species-----------------------------
+  #get size data for multistanza species------------------------------------------------------------
   multistanza.fg <- as.numeric(unlist(strsplit(sizeatage$fg[sizeatage$stanzas!="0"],"-")))
   multistanza.spp <- tolower(sizeatage$sciname[sizeatage$stanzas!='0'])[c(1,3,4)]
+  dat.lf$sciname <- tolower(gsub("_"," ",dat.lf$sciname))
   
-  lf2 = dat.lf[dat.lf$taxon %in% multistanza.spp,c('reference','taxon','length_mm','n_measured')]
-  lf.spp.mean <- aggregate(length_mm~taxon, lf2, mean)
-  lf.spp.sd <- aggregate(length_mm~taxon, lf2, sd)
-  lf.spp.min <- aggregate(length_mm~taxon, lf2, min)
-  lf.spp.max <- aggregate(length_mm~taxon, lf2, max)
-  lf.spp.cnt <- aggregate(length_mm~taxon, lf2, length)
+  lf2 = dat.lf[dat.lf$sciname %in% multistanza.spp,c('reference','sciname','length_mm')]
+  lf.spp.mean <- aggregate(length_mm~sciname, lf2, mean)
+  lf.spp.sd <- aggregate(length_mm~sciname, lf2, sd)
+  lf.spp.min <- aggregate(length_mm~sciname, lf2, min)
+  lf.spp.max <- aggregate(length_mm~sciname, lf2, max)
+  lf.spp.cnt <- aggregate(length_mm~sciname, lf2, length)
   lf.spp.sd$length_mm[is.na(lf.spp.sd$length_mm)] <- lf.spp.mean$length_mm[is.na(lf.spp.sd$length_mm)]* mean(lf.spp.sd[,2]/lf.spp.mean[,2],na.rm=T)
   
-  lf3 <- merge(lf2, dat2[,c('reference','taxon','maxn')])
+  names(lf2)
+  names(dat.maxn.long)
   
-  dat3 <- dat2[,c('reference','taxon','maxn')]
-  dat3 <- dat3[dat3$taxon %in% multistanza.spp,]
+  lf3 <- merge(lf2, dat.maxn.long)
+  
+  dat3 <- dat.maxn.long[,c('reference','sciname','maxn')]
+  dat3$sciname <- gsub("_"," ",dat3$sciname)
+  sort(unique(dat3$sciname))
+  dat3 <- dat3[dat3$sciname %in% multistanza.spp,]
+  
   dat4 <- data.frame()
   for(i in 1:nrow(dat3)){
-    #i=1507
+    #i=1
+    #i=which(dat3$reference=='2024_NCO-131')
     dat.i <- dat3[rep(i,dat3$maxn[i]),]
     ref.i <- dat3$reference[i]
-    spp.i <- dat3$taxon[i]
-    mean.i <- lf.spp.mean[lf.spp.mean$taxon==spp.i,2]
-    sd.i <- lf.spp.sd[lf.spp.mean$taxon==spp.i,2]
-    min.i <- lf.spp.min[lf.spp.mean$taxon==spp.i,2]
-    max.i <- lf.spp.max[lf.spp.mean$taxon==spp.i,2]
+    spp.i <- dat3$sciname[i]
+    mean.i <- lf.spp.mean[lf.spp.mean$sciname==spp.i,2]
+    sd.i <- lf.spp.sd[lf.spp.mean$sciname==spp.i,2]
+    min.i <- lf.spp.min[lf.spp.mean$sciname==spp.i,2]
+    max.i <- lf.spp.max[lf.spp.mean$sciname==spp.i,2]
     
-    obslen.i <- round(lf2$length_mm[lf2$taxon==spp.i & lf2$reference==ref.i])
+    obslen.i <- round(lf3$length_mm[lf3$sciname==spp.i & lf3$reference==ref.i])
     if(length(obslen.i)==0){
       #len.i = round(rnorm(nrow(dat.i),mean=lf.spp.mean$length_mm[lf.spp.mean$taxon==spp.i], sd=lf.spp.sd$length_mm[lf.spp.sd$taxon==spp.i]))
       len.i = round(rtruncnorm(nrow(dat.i),mean=mean.i, sd=sd.i, a=min.i, b=max.i))
-      lentype = rep('avg',length(len.i))
+      lentype = rep('rand',length(len.i))
     } else if(length(obslen.i)>=nrow(dat.i)){
       len.i = obslen.i[sample.int(nrow(dat.i))]
       lentype = rep('obs',length(len.i))
     } else{
       #obs.i = obslen.i[sample.int(length(obslen.i))]  #sample(obslen.i,length(obslen.i),replace=F)
-      if(length(obslen.i)>=3) rand.i = round(rtruncnorm(nrow(dat.i)-length(obslen.i),mean=mean.i, sd=sd.i, a=min.i, b=max.i))
-      if(length(obslen.i)<3) rand.i = round(rtruncnorm(nrow(dat.i)-length(obslen.i),mean=mean.i, sd=sd.i, a=min.i, b=max.i))
+      if(length(obslen.i)>=3) rand.i = round(rtruncnorm(nrow(dat.i)-length(obslen.i),mean=mean(obslen.i), sd=sd(obslen.i), a=min.i, b=max.i))
+      if(length(obslen.i)<3) rand.i =  round(rtruncnorm(nrow(dat.i)-length(obslen.i),mean=mean.i, sd=sd.i, a=min.i, b=max.i))
+      #rand.i =  round(rtruncnorm(nrow(dat.i)-length(obslen.i),mean=mean.i, sd=sd.i, a=min.i, b=max.i))
       len.i = c(obslen.i,rand.i)
-      lentype = c(rep('obs',length(obslen.i)),rep('avg',length(rand.i)))
+      lentype = c(rep('obs',length(obslen.i)),rep('rand',length(rand.i)))
     }
     dat.i$len_mm <- round(len.i)
     dat.i$lentype <- lentype
@@ -145,7 +160,7 @@ fn.make_gfisher_videodataset <- function(file.gfsh="..\\GFISHER\\data\\Video Cou
   #--------------------------assign multistanza species to fg -------------------------------------
   for(i in 1:nrow(dat4)){
     #i=1
-    spp.i = tolower(dat4$taxon[i])
+    spp.i = tolower(dat4$sciname[i])
     laa.i = as.numeric(sizeatage[tolower(sizeatage$sciname)==spp.i,which(substr(names(sizeatage),1,3)=='age')])
     stanzas.i = as.numeric(unlist(strsplit(sizeatage$stanzas[tolower(sizeatage$sciname)==spp.i],"-")))
     groups.i = as.numeric(unlist(strsplit(sizeatage$fg[tolower(sizeatage$sciname)==spp.i],"-")))
@@ -162,15 +177,18 @@ fn.make_gfisher_videodataset <- function(file.gfsh="..\\GFISHER\\data\\Video Cou
   }
   names(dat4)
   dat4$n_at_length = 1
-  dat4 <- aggregate(n_at_length~reference+taxon+modnumber+modname, data=dat4, sum)
+  dat4 <- aggregate(n_at_length~reference+sciname+modnumber+modname, data=dat4, sum)
   dat4$maxn <- dat4$n_at_length
   dat4$n_at_length <- NULL
   
   #--------------------------assign NON-multistanza species to fg -------------------------------------
-  dat5 <-  dat2[!dat2$taxon %in% multistanza.spp,c('reference','taxon','maxn')]
+  #resume here...
+  dat5 <-  dat.maxn.long[!dat.maxn.long$sciname %in% multistanza.spp,c('reference','sciname','maxn')]
   names(dat5)
   names(spp.gfsh)
-  dat5 <- merge(dat5, spp.gfsh[,c('taxon','modnumber','modname')], by='taxon', all.x=T)
+  spp.key <- spp.gfsh[,c('taxon','modnumber','modname')]
+  spp.key$taxon <- gsub("_"," ", spp.key$taxon)          # match dat5$sciname format (spaces, not underscores)
+  dat5 <- merge(dat5, spp.key, by.x='sciname',by.y='taxon', all.x=T)
   
   
   #put it back together
@@ -179,9 +197,9 @@ fn.make_gfisher_videodataset <- function(file.gfsh="..\\GFISHER\\data\\Video Cou
   dat.full <- rbind(dat4, dat5)
   
   #check counts
-  sum1 <- aggregate(maxn~taxon, data=dat.full, sum)
+  sum1 <- aggregate(maxn~sciname, data=dat.full, sum)
   names(sum1)[2] <- 'final_maxn'
-  sum2 <- aggregate(maxn~taxon, data=dat2, sum)
+  sum2 <- aggregate(maxn~sciname, data=dat.maxn.long, sum)
   names(sum2)[2] <- 'raw_maxn'
   chk <- merge(sum1,sum2)
   err <- which(chk$final_maxn != chk$raw_maxn)
@@ -193,6 +211,103 @@ fn.make_gfisher_videodataset <- function(file.gfsh="..\\GFISHER\\data\\Video Cou
   which(duplicated(stations$reference))
   dat.full <- merge(dat.full, stations[,-which(names(stations) %in% c('dup','complete'))], all.x=T, by='reference')
   return(dat.full)
+} #eof
+
+fn.make_GFISHER_maxn_maps <- function(maxn, depth, lon.col='lon_dd', lat.col='lat_dd', fun='sum', background=NA, dir.out=NULL, save.format='tif', plot=FALSE){
+  # Rasterize MaxN counts into per-model-group heatmaps on the depth grid.
+  #
+  # maxn    : data.frame returned by fn.make_gfisher_videodataset(); must contain
+  #           'modnumber', 'maxn', and station coordinates (lon.col/lat.col, decimal degrees WGS84).
+  # depth   : template raster defining output dimensions, extent, and CRS.
+  # lon.col,
+  # lat.col : names of the longitude/latitude columns in `maxn`.
+  # fun     : aggregation applied to records sharing a cell. 'sum' (default) gives a total
+  #           MaxN-count heatmap; 'mean' gives mean count per observation.
+  # background : value for water cells with no observation. NA (default) leaves them empty;
+  #           use 0 to treat unsampled water as zero count. Land/no-depth cells are always NA.
+  # dir.out : if not NULL, write the stack to this directory. Created if it doesn't exist.
+  # save.format : 'tif'   -> single multi-band GeoTIFF, layer names preserved (default; best
+  #                          for round-tripping into R to compare with Ecospace predictions);
+  #               'ascii' -> one .asc per group (Ecospace grid format), named by modnumber+modname;
+  #               'rds'   -> native R object, also preserves the modlabels attribute;
+  #               'all'   -> all three.
+  # plot    : if TRUE, plot the resulting stack as a side effect (mirrors the other functions).
+  #
+  # Returns a RasterStack with one layer per modnumber (named 'mod<modnumber>'), masked to the
+  # depth grid. Empty (unsampled) water cells are NA; land/no-depth cells are NA. A modnumber->
+  # modname lookup is attached as attr(<stack>, 'modlabels') for labelling.
+
+  #checks-------------------------------------------------------------------------
+  req <- c('modnumber','maxn',lon.col,lat.col)
+  miss <- req[!req %in% names(maxn)]
+  if(length(miss)>0) stop(paste('maxn is missing required column(s):', paste(miss, collapse=', ')))
+
+  # depth may arrive as a terra SpatRaster (if terra is loaded); coerce to a raster::RasterLayer
+  # so the sp-points rasterize() path below dispatches to the raster method, not terra's.
+  if(inherits(depth,'SpatRaster')) depth <- raster::raster(depth)
+
+  #drop records with no group assignment, no maxn, or no location
+  keep <- !is.na(maxn$modnumber) & !is.na(maxn$maxn) &
+          !is.na(maxn[[lon.col]]) & !is.na(maxn[[lat.col]])
+  if(sum(!keep)>0) message(paste('Dropping',sum(!keep),'record(s) with missing modnumber, maxn, or coordinates.'))
+  dat <- maxn[keep,]
+  if(nrow(dat)==0) stop('No records with non-missing modnumber, maxn, and coordinates.')
+
+  #build spatial points and match the depth CRS-----------------------------------
+  dat.sp <- dat
+  coordinates(dat.sp) <- as.formula(paste0('~',lon.col,'+',lat.col))
+  proj4string(dat.sp) <- CRS('+proj=longlat +datum=WGS84 +no_defs')
+  dat.sp <- spTransform(dat.sp, crs(depth))
+
+  #rasterize one layer per model group--------------------------------------------
+  mods <- sort(unique(dat.sp$modnumber))
+  maxn.stack <- stack()
+  for(i in seq_along(mods)){
+    mod.i <- mods[i]
+    pts.i <- dat.sp[dat.sp$modnumber==mod.i,]
+    ras.i <- raster::rasterize(pts.i, depth, field='maxn', fun=fun, background=background, na.rm=T)
+    ras.i[is.na(depth)] <- NA            # mask land / no-depth cells
+    maxn.stack <- addLayer(maxn.stack, ras.i)
+  }
+  #attach modnumber -> modname lookup for labelling
+  modlabels <- NULL
+  if('modname' %in% names(dat)){
+    modlabels <- unique(dat[,c('modnumber','modname')])
+    modlabels <- modlabels[match(mods, modlabels$modnumber),]
+    attr(maxn.stack,'modlabels') <- modlabels
+  }
+
+  #name layers by modname (raster sanitizes spaces to '.'); fall back to modnumber
+  labs <- if(!is.null(modlabels)) modlabels$modname else paste0('mod', mods)
+  names(maxn.stack) <- labs
+
+  #save---------------------------------------------------------------------------
+  if(!is.null(dir.out)){
+    if(!dir.exists(dir.out)) dir.create(dir.out, recursive=TRUE)
+    res.min <- round(res(depth)[1]*60,0)
+    dims    <- paste0(dim(maxn.stack)[1],'x',dim(maxn.stack)[2])
+    stem    <- file.path(dir.out, paste0('GFISHER_maxn_',res.min,'min_',dims))
+
+    if(save.format %in% c('tif','all')){
+      # multi-band GeoTIFF keeps layer names + CRS; read back with stack(paste0(stem,'.tif'))
+      raster::writeRaster(maxn.stack, filename=paste0(stem,'.tif'), overwrite=TRUE)
+    }
+    if(save.format %in% c('ascii','all')){
+      # one .asc per group; encode modnumber + sanitized modname in the filename since ascii drops names
+      # base 'GFISHER_maxn' + suffix -> GFISHER_maxn_mod<n>_<modname>_<res>min_<dims>.asc
+      suff <- paste0('mod', mods, '_', gsub('[^A-Za-z0-9]+','-', labs), '_', res.min, 'min_', dims)
+      raster::writeRaster(maxn.stack, filename=file.path(dir.out,'GFISHER_maxn'),
+                          bylayer=TRUE, suffix=suff, format='ascii', overwrite=TRUE)
+    }
+    if(save.format %in% c('rds','all')){
+      # native R: preserves the modlabels attribute too
+      saveRDS(maxn.stack, file=paste0(stem,'.rds'))
+    }
+    message(paste0('Saved maxn maps (', save.format, ') to ', dir.out))
+  }
+
+  if(plot) plot(maxn.stack, main=labs, maxnl=nlayers(maxn.stack))
+  return(maxn.stack)
 } #eof
 
 fn.make_GFISHER_habitat_maps <- function(file.gdb, dir.maps, depth=depth){
