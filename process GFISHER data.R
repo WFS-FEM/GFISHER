@@ -7,20 +7,27 @@ library('terra')
 # Set the working directory to the GFISHER repo root before running this script (setwd("path/to/GFISHER")).
 # All other paths below resolve relative to it.
 dir.gfisher <- getwd()
-dir.maps <- file.path(dir.gfisher,'maps','GFISHER')
+dir.maps <- file.path(dir.gfisher,'maps')
 if(!dir.exists(dir.maps)) dir.create(dir.maps, recursive=TRUE, showWarnings=FALSE)
+
+# dir.ewemaps: where the MaxN heatmap outputs are written. Defaults to the in-repo maps/ so the
+# script runs out of the box. To write them into an external Ecospace maps tree instead, set
+# dir.ewemaps.ext to its path; it is used only when it exists, otherwise the in-repo maps/ is used.
+dir.ewemaps <- dir.maps
+dir.ewemaps.ext <- ""   # e.g. "C:/Users/<you>/OneDrive .../WFS EwE/Ecospace/maps"
+if(nzchar(dir.ewemaps.ext) && dir.exists(dir.ewemaps.ext)) dir.ewemaps <- dir.ewemaps.ext
 
 # file.gdb: ABSOLUTE path to your local copy of the GFISHER East Universe geodatabase.
 # This file is NOT shipped with the repo (too large). Users running this code are expected to
 # have their own copy of GFISHER_EAST_Universe_2026.gdb (or equivalent) and to point this at it.
-dir.data <- file.path(dir.gfisher,'data')
+dir.data <- file.path(dir.gfisher,'data','April2026')
 dir.scripts <- file.path(dir.gfisher,'R')
-file.gdb <- "C:/path/to/your/GFISHER_EAST_Universe_2026.gdb"
-file.spplist <- file.path(dir.data,"Master Species List.xlsx")
-file.sizeatage <- file.path(dir.data,'size_at_age.csv')
-file.maxn = file.path(dir.data,'April2026','maxn3LABS_93to24.csv')
-file.env = file.path(dir.data,'April2026','env3LABS_93to24.csv')
-file.len = file.path(dir.data,'April2026','lens3LABS_93to24.csv')
+file.gdb <- file.path(dir.data,"GFISHER_EAST_Universe_2026.gdb")
+file.spplist <- file.path(dirname(dir.data),"Master Species List.xlsx")
+file.sizeatage <- file.path(dirname(dir.data),'size_at_age.csv')
+file.maxn = file.path(dir.data,'maxn3LABS_93to24.csv')
+file.env = file.path(dir.data,'env3LABS_93to24.csv')
+file.len = file.path(dir.data,'lens3LABS_93to24.csv')
 dir.bathy <- file.path(dir.gfisher,'maps','bathymetry')
 dir.bathy.ext <- ""   # e.g. "C:/Users/<you>/OneDrive .../WFS EwE/Ecospace/maps/bathymetry"
 if(nzchar(dir.bathy.ext) && dir.exists(dir.bathy.ext)) dir.bathy <- dir.bathy.ext
@@ -49,9 +56,10 @@ maxn <- fn.make_gfisher_videodataset(file.maxn, file.env, file.len, bbox,spplist
 #FISH MAXN HEATMAPS-----------------------------------------------------------------------------------
 class(maxn)
 graphics.off();rm(.SavedPlots);windows(record=T)
-maxn.stack <- fn.make_GFISHER_maxn_maps(maxn, depth, plot=T, fun=mean, background=0, dir.out="maps/GFISHER/maxn")        # one layer per model group
-names(maxn.stack)
-par(mfrow=c(3,3))
-for(i in 1:nlayers(maxn.stack)){
-  plot(maxn.stack[[i]],colNA='black', main=names(maxn.stack)[i])
-}
+maxn.stack <- fn.make_GFISHER_maxn_maps(maxn, depth, plot=T, fun=mean, background=0, 
+                                        dir.out=file.path(dir.ewemaps,'GFISHER',paste0(res,'min'),'maxn'),
+                                        save.format='all')        # one layer per model group
+
+
+
+
