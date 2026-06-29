@@ -213,7 +213,7 @@ fn.make_gfisher_videodataset <- function(file.maxn, file.env, file.len, bbox,spp
   return(dat.full)
 } #eof
 
-fn.make_GFISHER_maxn_maps <- function(maxn, depth, lon.col='lon_dd', lat.col='lat_dd', fun='sum', background=NA, dir.out=NULL, save.format='tif', plot=FALSE){
+fn.make_GFISHER_maxn_maps <- function(maxn, depth, lon.col='lon_dd', lat.col='lat_dd', fun='sum', background=NA, dir.out=NULL, save.format='ascii', plot=FALSE){
   # Rasterize MaxN counts into per-model-group heatmaps on the depth grid.
   #
   # maxn    : data.frame returned by fn.make_gfisher_videodataset(); must contain
@@ -225,13 +225,11 @@ fn.make_GFISHER_maxn_maps <- function(maxn, depth, lon.col='lon_dd', lat.col='la
   #           MaxN-count heatmap; 'mean' gives mean count per observation.
   # background : value for water cells with no observation. NA (default) leaves them empty;
   #           use 0 to treat unsampled water as zero count. Land/no-depth cells are always NA.
-  # dir.out : if not NULL, write the stack to this directory. Created if it doesn't exist.
-  # save.format : 'tif'   -> single multi-band GeoTIFF, layer names preserved (default; best
-  #                          for round-tripping into R to compare with Ecospace predictions);
-  #               'ascii' -> one .asc per group (Ecospace grid format), named by modnumber+modname;
-  #               'rds'   -> native R object, also preserves the modlabels attribute;
-  #               'all'   -> all three.
-  # plot    : if TRUE, plot the resulting stack as a side effect (mirrors the other functions).
+  # dir.out : if not NULL, write the per-group .asc rasters to this directory. Created if needed.
+  # save.format : 'ascii' -> one .asc per group (Ecospace grid format), named by modnumber+modname
+  #                          (default). The on-screen/PDF figure is controlled separately by `plot`.
+  # plot    : if TRUE, render the per-group heatmaps to a multipage PDF (3x3 panels per page,
+  #           one panel per model group) written to dir.out (or the working dir if dir.out is NULL).
   #
   # Returns a RasterStack with one layer per modnumber (named 'mod<modnumber>'), masked to the
   # depth grid. Empty (unsampled) water cells are NA; land/no-depth cells are NA. A modnumber->
@@ -281,32 +279,37 @@ fn.make_GFISHER_maxn_maps <- function(maxn, depth, lon.col='lon_dd', lat.col='la
   labs <- if(!is.null(modlabels)) modlabels$modname else paste0('mod', mods)
   names(maxn.stack) <- labs
 
+  #naming bits shared by the save and plot blocks
+  res.min <- round(res(depth)[1]*60,0)
+  dims    <- paste0(dim(maxn.stack)[1],'x',dim(maxn.stack)[2])
+
   #save---------------------------------------------------------------------------
   if(!is.null(dir.out)){
     if(!dir.exists(dir.out)) dir.create(dir.out, recursive=TRUE)
-    res.min <- round(res(depth)[1]*60,0)
-    dims    <- paste0(dim(maxn.stack)[1],'x',dim(maxn.stack)[2])
-    stem    <- file.path(dir.out, paste0('GFISHER_maxn_',res.min,'min_',dims))
-
-    if(save.format %in% c('tif','all')){
-      # multi-band GeoTIFF keeps layer names + CRS; read back with stack(paste0(stem,'.tif'))
-      raster::writeRaster(maxn.stack, filename=paste0(stem,'.tif'), overwrite=TRUE)
-    }
-    if(save.format %in% c('ascii','all')){
-      # one .asc per group; encode modnumber + sanitized modname in the filename since ascii drops names
-      # base 'GFISHER_maxn' + suffix -> GFISHER_maxn_mod<n>_<modname>_<res>min_<dims>.asc
-      suff <- paste0('mod', mods, '_', gsub('[^A-Za-z0-9]+','-', labs), '_', res.min, 'min_', dims)
-      raster::writeRaster(maxn.stack, filename=file.path(dir.out,'GFISHER_maxn'),
-                          bylayer=TRUE, suffix=suff, format='ascii', overwrite=TRUE)
-    }
-    if(save.format %in% c('rds','all')){
-      # native R: preserves the modlabels attribute too
-      saveRDS(maxn.stack, file=paste0(stem,'.rds'))
-    }
-    message(paste0('Saved maxn maps (', save.format, ') to ', dir.out))
+    # one .asc per group; encode modnumber + sanitized modname in the filename since ascii drops names
+    # base 'GFISHER_maxn' + suffix -> GFISHER_maxn_mod<n>_<modname>_<res>min_<dims>.asc
+    suff <- paste0('mod', mods, '_', gsub('[^A-Za-z0-9]+','-', labs), '_', res.min, 'min_', dims)
+    raster::writeRaster(maxn.stack, filename=file.path(dir.out,'GFISHER_maxn'),
+                        bylayer=TRUE, suffix=suff, format='ascii', overwrite=TRUE)
+    message(paste0('Saved maxn maps (ascii) to ', dir.out))
   }
 
-  if(plot) plot(maxn.stack, main=labs, maxnl=nlayers(maxn.stack))
+  #plot to a multipage PDF (3x3 panels per page)----------------------------------
+  # A direct plot() side-effect on a multi-layer stack is unreliable in scripts (recording
+  # devices, terra masking raster's plot generic), so render straight to a PDF device instead.
+  if(plot){
+    pdf.dir <- if(!is.null(dir.out)) dir.out else getwd()
+    if(!dir.exists(pdf.dir)) dir.create(pdf.dir, recursive=TRUE)
+    pdf.file <- file.path(pdf.dir, paste0('GFISHER_maxn_heatmaps_',res.min,'min_',dims,'.pdf'))
+    pdf(pdf.file, onefile=TRUE, width=10, height=10)
+    op <- par(mfrow=c(3,3), mar=c(3,3,3,5))
+    for(i in 1:nlayers(maxn.stack)){
+      plot(maxn.stack[[i]], colNA='black', main=labs[i])
+    }
+    par(op)
+    dev.off()
+    message(paste0('Saved maxn heatmap pdf to ', pdf.file))
+  }
   return(maxn.stack)
 } #eof
 
