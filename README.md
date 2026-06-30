@@ -6,12 +6,18 @@ R code that converts the FWRI side-scan sonar microgrid + digitized habitat poly
 
 ```
 GFISHER/
-  process GFISHER data.R     # driver: USER INPUTS at top, then calls the two habitat-mapping functions
+  process GFISHER data.R     # driver: USER INPUTS at top, then calls the habitat-mapping functions
   R/
     GFISHER functions.R      # helper functions (loads sf, sp, lwgeom, gstat, colorRamps, maps)
-  maps/
+  data/
     bathymetry/              # ships with repo: depth + exclusion-mask rasters at 5min and 15min
-    GFISHER/                 # generated outputs (gitignored)
+    <your>.gdb/              # user-supplied geodatabase (gitignored)
+  output/                    # generated outputs (gitignored)
+    maps/
+      <res>min/              # habitat-proportion ASCII rasters + summary figures
+      GFISHER/<res>min/maxn/ # MaxN heatmap rasters
+  docs/
+    img/                     # figures embedded in this README
 ```
 
 The user's local `.gdb` is referenced via the `file.gdb` USER INPUT and is **not** stored in the repo.
@@ -29,12 +35,12 @@ The only paths the user must edit are in the **USER INPUTS** block at the top of
 | Variable   | What it is                                                                                                                       |
 |------------|----------------------------------------------------------------------------------------------------------------------------------|
 | `file.gdb` | Absolute path to your local copy of `GFISHER_EAST_Universe_2026.gdb`. Not shipped with the repo; provided by FWRI to project collaborators. |
-| `res`      | Map resolution in arc-minutes. `5` or `15` work out of the box (matching depth/exclusion rasters in `maps/bathymetry/`).         |
+| `res`      | Map resolution in arc-minutes. `5` or `15` work out of the box (matching depth/exclusion rasters in `data/bathymetry/`).         |
 
 ## What `process GFISHER data.R` does
 
-1. **Setup** — sets `file.gdb` and `res` via the USER INPUTS block, sources `R/GFISHER functions.R`, and creates `maps/GFISHER/` for outputs.
-2. **Pick the depth raster** for the chosen `res` from `maps/bathymetry/`.
+1. **Setup** — sets `file.gdb` and `res` via the USER INPUTS block, sources `R/GFISHER functions.R`, and creates `output/maps/` for outputs.
+2. **Pick the depth raster** for the chosen `res` from `data/bathymetry/`.
 3. **Build the habitat maps** by calling `fn.make_GFISHER_habitat_maps(depth, file.gdb, dir.maps)`.
 4. **Render the figures** by calling `fn.plot_GFISHER_habitats(file.path(dir.maps, paste0(res,'min')))`.
 
@@ -70,7 +76,7 @@ Defined in `R/GFISHER functions.R`. Builds the per-cell proportional habitat-cov
 Defined in `R/GFISHER functions.R`. Renders summary figures from the ASCII rasters written by `fn.make_GFISHER_habitat_maps()`.
 
 **Inputs**
-- `dir.maps` — the resolution-specific subdirectory (e.g. `maps/GFISHER/5min`).
+- `dir.maps` — the resolution-specific subdirectory (e.g. `output/maps/5min`).
 
 **Behavior**
 - Reads all `.asc` files in that directory, splits them into the six habitat-class rasters and the microgrid raster.
@@ -89,13 +95,13 @@ library('raster')
 source(file.path('R', 'GFISHER functions.R'))
 
 dir.gfisher <- getwd()
-dir.maps    <- file.path(dir.gfisher, 'maps', 'GFISHER')
+dir.maps    <- file.path(dir.gfisher, 'output', 'maps')
 dir.create(dir.maps, recursive = TRUE, showWarnings = FALSE)
 
 file.gdb <- "C:/path/to/your/GFISHER_EAST_Universe_2026.gdb"
 res      <- 5
 
-file.depth <- list.files(file.path(dir.gfisher, 'maps', 'bathymetry'),
+file.depth <- list.files(file.path(dir.gfisher, 'data', 'bathymetry'),
                          pattern = paste0("^depth ", res, "min.*\\.asc$"),
                          full.names = TRUE)
 depth <- raster(file.depth)
@@ -104,7 +110,7 @@ fn.make_GFISHER_habitat_maps(file.gdb = file.gdb, dir.maps = dir.maps, depth = d
 fn.plot_GFISHER_habitats(dir.maps = file.path(dir.maps, paste0(res, 'min')))
 ```
 
-Expected outputs in `maps/GFISHER/5min/`:
+Expected outputs in `output/maps/5min/`:
 
 - `GFISHER_AL_prop_5min_66x78.asc`, `_AM_`, `_AH_`, `_NL_`, `_NM_`, `_NH_`
 - `GFISHER_microgrid_5min_66x78.asc`
@@ -124,4 +130,4 @@ Mapping footprint (km² of side-scan coverage per grid cell):
 ## Notes
 
 - The geodatabase read + polygon-centroid intersection + IDW fill is the slow step (minutes at 5min resolution). Once the `.asc` outputs exist they can be reused directly.
-- `data/*.gdb/`, `maps/GFISHER/`, and `hoard/` are gitignored.
+- `data/**/*.gdb/`, `output/maps/GFISHER/`, `output/maps/<res>min/`, `output/affinity_selratio/`, and `hoard/` are gitignored. The depth/exclusion rasters under `data/bathymetry/` and the figures under `docs/img/` are tracked.

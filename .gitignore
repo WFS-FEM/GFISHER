@@ -1,11 +1,22 @@
 .DS_Store
+.Rhistory
 
-# generated outputs from process GFISHER data.R
-maps/GFISHER/
+# generated outputs from process GFISHER data.R (maps/ was moved under output/)
+output/maps/GFISHER/
+output/maps/5min/
+output/maps/15min/
+
+# generated habitat-affinity outputs
+output/affinity_selratio/
 
 # large local-only inputs (user supplies their own copy of the geodatabase)
 data/*.gdb/
 data/**/*.gdb/
+data/April2026/
+
+# generated species -> model-group lookup (written by fn.make_gfisher_videodataset)
+data/GFISHER_species_fg.csv
 
 # author scratch
 hoard/
+prompt.md
