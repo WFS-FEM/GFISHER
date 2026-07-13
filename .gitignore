@@ -6,16 +6,17 @@ output/maps/GFISHER/
 output/maps/5min/
 output/maps/15min/
 
-# generated habitat-affinity outputs
-output/affinity_selratio/
+# generated habitat-affinity outputs (scheme-tagged, e.g. affinity_selratio_mice/)
+output/affinity_selratio*/
 
 # large local-only inputs (user supplies their own copy of the geodatabase)
 data/*.gdb/
 data/**/*.gdb/
 data/April2026/
 
-# generated species -> model-group lookup (written by fn.make_gfisher_videodataset)
-data/GFISHER_species_fg.csv
+# generated species -> model-group lookup (written by fn.make_gfisher_videodataset;
+# scheme-tagged, e.g. GFISHER_species_fg_modnum_mice.csv)
+data/GFISHER_species_fg*.csv
 
 # author scratch
 hoard/

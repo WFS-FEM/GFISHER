@@ -10,7 +10,13 @@ library('xlsx')
 library('reshape2')
 library('truncnorm')
 
-fn.make_gfisher_videodataset <- function(file.maxn, file.env, file.len, bbox,spplist){
+fn.make_gfisher_videodataset <- function(file.maxn, file.env, file.len, bbox, file.spplist,
+                                         col.modnum='modnum', col.modname='modname', col.fg='fg'){
+  # Species groupings are set by the caller, not hardcoded, via the three column arguments:
+  #   col.modnum / col.modname : which spplist-sheet columns give the model-group number and name
+  #   col.fg                   : which spp_stanzas_sizes column maps age stanzas to group numbers
+  # Defaults reproduce the original Ecospace scheme (modnum/modname/fg). The MICE scheme is selected
+  # by passing modnum_mice/modname_mice/fg_mice. See process GFISHER data.R for the driver knob.
   
   #fxn arguments/inputs
   # file.gfsh = "C:\\Users\\dchagaris\\Github\\WFS-FEM\\GFISHER\\data\\Video Count Data4ChagarisTake2.xlsx"
@@ -57,21 +63,27 @@ fn.make_gfisher_videodataset <- function(file.maxn, file.env, file.len, bbox,spp
   if(length(dup2)>0) stations = stations[-dup2,]
   
   #--------------------------create species to model groupings key-------------------------------------------
-  #read species-group assignments and list of model groups
-  modspp  = read.xlsx(file.spplist,sheetName="spplist",stringsAsFactors=F,colIndex=1:10)
-  modgrps = read.xlsx(file.spplist,sheetName="model groups",stringsAsFactors=F,colIndex=1:4)
-  names(modspp)[1:2] = c('modnumber','modname')
-  names(modgrps)[1:2] = c('modnumber','modname')
+  # Read the whole spplist sheet (colIndex wide enough to include the MICE columns at ~44-45), then
+  # promote the requested scheme's columns to the generic names 'modnumber'/'modname' used downstream.
+  modspp.raw = read.xlsx(file.spplist,sheetName="spplist",stringsAsFactors=F,colIndex=1:45)
+  modspp.raw = modspp.raw[!is.na(modspp.raw$modnum),]
+  # crosswalk ORIGINAL modnum -> scheme group number, for the hardcoded taxon fallbacks further down
+  cw = unique(modspp.raw[,c('modnum', col.modnum)]); names(cw) = c('orig','scheme')
+  modspp = modspp.raw
+  modspp$modnumber = modspp.raw[[col.modnum]]
+  modspp$modname   = modspp.raw[[col.modname]]
   spplist <- melt(modspp, id.vars=c('modnumber','modname'), measure.vars=c('species','query','og_name','class','order','family','genus'), variable.name='var',value.name='taxon')
   spplist <- spplist[,-3]
   spplist <- data.frame(lapply(spplist, tolower), stringsAsFactors = FALSE)
   spplist$taxon <- ifelse(spplist$taxon=="",NA,spplist$taxon)
   spplist <- unique(spplist)
-  spplist <- spplist[spplist$modnumber!='99',]
+  spplist <- spplist[!spplist$modnumber %in% c('99','0'),]   # drop 'not included' (99) and 'omitted' (0)
   #spplist <- spplist[complete.cases(spplist),]
-  
+  # number -> name lookup for the requested scheme (replaces the original-only 'model groups' sheet)
+  modgrps <- unique(spplist[!is.na(spplist$modnumber), c('modnumber','modname')])
+
   ##multistanza size at age-------------------------------------------------------------------------
-  sizeatage <- read.xlsx(file.spplist,sheetName="size_at_age",stringsAsFactors=F)
+  sizeatage <- read.xlsx(file.spplist,sheetName="spp_stanzas_sizes",stringsAsFactors=F)
   
   #keep species included in the model
   keeptaxa = tolower(sort(unique(spplist$taxon)))
@@ -84,11 +96,13 @@ fn.make_gfisher_videodataset <- function(file.maxn, file.env, file.len, bbox,spp
                               ifelse(spp.gfsh$taxon2 %in% keeptaxa, spplist$modnumber[match(spp.gfsh$taxon2,spplist$taxon)],
                                      ifelse(spp.gfsh$taxon3 %in% keeptaxa, spplist$modnumber[match(spp.gfsh$taxon3,spplist$taxon)],NA)))
   
-  spp.gfsh$modnumber = ifelse(spp.gfsh$taxon=='lutjanidae_sp',19,
-                              ifelse(spp.gfsh$taxon %in% c('epinephelus_sp','epinephelus_striatus'),36,spp.gfsh$modnumber))
+  # ambiguous family/genus catch-alls, given as ORIGINAL modnumbers (19='other snapper', 36='other SWG')
+  # and translated to the requested scheme via the crosswalk so they land in the right group.
+  spp.gfsh$modnumber = ifelse(spp.gfsh$taxon=='lutjanidae_sp', as.character(cw$scheme[match(19, cw$orig)]),
+                              ifelse(spp.gfsh$taxon %in% c('epinephelus_sp','epinephelus_striatus'), as.character(cw$scheme[match(36, cw$orig)]),spp.gfsh$modnumber))
   spp.gfsh$modname = modgrps$modname[match(spp.gfsh$modnumber, modgrps$modnumber)]
-  
-  write.csv(spp.gfsh,file.path(dirname(dirname(file.maxn)),'GFISHER_species_fg.csv'),row.names=F)
+
+  write.csv(spp.gfsh,file.path(dirname(dirname(file.maxn)),paste0('GFISHER_species_fg_',col.modnum,'.csv')),row.names=F)
   
   #melt video data----------------------------------------------------------------------------------
   dat.maxn.long <- melt(dat.maxn[,-1],id.vars='reference', variable.name='sciname', value.name='maxn')
@@ -96,8 +110,15 @@ fn.make_gfisher_videodataset <- function(file.maxn, file.env, file.len, bbox,spp
   dat.maxn.long$sciname <- gsub("_"," ",as.character(dat.maxn.long$sciname))
   
   #get size data for multistanza species------------------------------------------------------------
-  multistanza.fg <- as.numeric(unlist(strsplit(sizeatage$fg[sizeatage$stanzas!="0"],"-")))
-  multistanza.spp <- tolower(sizeatage$sciname[sizeatage$stanzas!='0'])[c(1,3,4)]
+  # A species is multistanza UNDER THIS SCHEME only if its scheme fg column lists more than one group
+  # (e.g. gag -> '4-5-6-7-8-9' under MICE). Species whose stanzas collapse to a single group under the
+  # scheme (e.g. red snapper -> 'snappers') fall through to the spplist assignment below instead. This
+  # replaces the old hardcoded [c(1,3,4)] index, and reproduces it exactly for the original scheme.
+  fg.scheme <- as.character(sizeatage[[col.fg]])
+  ntok <- sapply(strsplit(fg.scheme, "-"), function(z) sum(nzchar(z)))
+  is.multi <- !is.na(sizeatage$stanzas) & sizeatage$stanzas!="0" & ntok > 1
+  multistanza.fg  <- as.numeric(unlist(strsplit(fg.scheme[is.multi], "-")))
+  multistanza.spp <- tolower(sizeatage$sciname[is.multi])
   dat.lf$sciname <- tolower(gsub("_"," ",dat.lf$sciname))
   
   lf2 = dat.lf[dat.lf$sciname %in% multistanza.spp,c('reference','sciname','length_mm')]
@@ -161,15 +182,15 @@ fn.make_gfisher_videodataset <- function(file.maxn, file.env, file.len, bbox,spp
   for(i in 1:nrow(dat4)){
     #i=1
     spp.i = tolower(dat4$sciname[i])
-    laa.i = as.numeric(sizeatage[tolower(sizeatage$sciname)==spp.i,which(substr(names(sizeatage),1,3)=='age')])
+    laa.i = as.numeric(unlist(sizeatage[which(tolower(sizeatage$sciname)==spp.i)[1],which(substr(names(sizeatage),1,3)=='age')]))
     stanzas.i = as.numeric(unlist(strsplit(sizeatage$stanzas[tolower(sizeatage$sciname)==spp.i],"-")))
-    groups.i = as.numeric(unlist(strsplit(sizeatage$fg[tolower(sizeatage$sciname)==spp.i],"-")))
+    groups.i = as.numeric(unlist(strsplit(sizeatage[[col.fg]][tolower(sizeatage$sciname)==spp.i],"-")))
     names(dat4)
     size.i = dat4$len_mm[i]/10
     age.i = which.min(abs(laa.i-size.i))-1
     stz.i = tail(which(age.i-stanzas.i>=0),1)
     grp.i = groups.i[stz.i]
-    grpname.i = modgrps$modname[grp.i]
+    grpname.i = modgrps$modname[match(grp.i, modgrps$modnumber)]
     
     dat4$modnumber[i] <- grp.i
     dat4$modname[i] <- grpname.i

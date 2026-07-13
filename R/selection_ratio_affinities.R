@@ -93,12 +93,39 @@ fn.availability_coverage <- function(hab.stack, effort, q=0.90){
   }))
 }
 
+#--- apply prior habitat constraints to a named selection-ratio vector --------------------
+# w      : named numeric selection ratios (names = layer codes, e.g. RCK/GVL/SND/MUD/...).
+# con    : list controlling the constraints (all optional):
+#   $zero.codes  layers forced to 0 (default 'MUD' -- not identifiable from the reef survey).
+#   $sand.code   layer that must sit strictly below every $hard.codes layer (default 'SND').
+#   $hard.codes  hard-substrate layers sand must not exceed (default c('RCK','GVL')).
+#   $sand.margin fractional gap kept below the smaller hard layer (default 0.05).
+# Only lowers sand (rock/gravel keep their estimated values); groups already satisfying the
+# ordering are untouched. Returns the constrained w; affinity A is then recomputed from it.
+fn.constrain_w <- function(w, con=list()){
+  zero.codes  <- if(!is.null(con$zero.codes))  con$zero.codes  else 'MUD'
+  sand.code   <- if(!is.null(con$sand.code))   con$sand.code   else 'SND'
+  hard.codes  <- if(!is.null(con$hard.codes))  con$hard.codes  else c('RCK','GVL')
+  sand.margin <- if(!is.null(con$sand.margin)) con$sand.margin else 0.05
+  w[intersect(zero.codes, names(w))] <- 0
+  if(!is.na(sand.code) && sand.code %in% names(w) && !is.na(w[[sand.code]])){
+    hard <- w[intersect(hard.codes, names(w))]; hard <- hard[!is.na(hard)]
+    if(length(hard) > 0){
+      cap <- min(hard) * (1 - sand.margin)
+      if(w[[sand.code]] > cap) w[[sand.code]] <- cap
+    }
+  }
+  w
+}
+
 #--- selection ratios for ONE empirical MaxN layer ----------------------------------------
-# Returns a per-layer data.frame: code, family, avail, used, w, w_lo, w_hi, A, sig.
+# Returns a per-layer data.frame: code, family, avail, used, w, w_lo, w_hi, w_con, A, sig.
+# When con$apply is TRUE the constraints above are applied to w -> w_con and A is derived from
+# w_con; the raw w / w_lo / w_hi / sig are left untouched as the empirical evidence.
 # n.boot bootstrap resamples of surveyed cells give a 95% CI on w; sig = 'for'/'against'/'ns'
 # from whether that CI clears 1. min.pos guards groups with too few non-zero MaxN cells.
 fn.selection_ratios <- function(hab.stack, emp.ras, effort, n.boot=1000, seed=1,
-                                min.pos=5, spec=LAYER.SPEC){
+                                min.pos=5, spec=LAYER.SPEC, con=NULL){
   if(!compareRaster(hab.stack, emp.ras, extent=TRUE, rowcol=TRUE, crs=FALSE, stopiffalse=FALSE))
     stop("habitat stack and empirical raster do not share the same grid")
   H <- getValues(hab.stack); E <- getValues(emp.ras); ev <- getValues(effort)
@@ -109,7 +136,7 @@ fn.selection_ratios <- function(hab.stack, emp.ras, effort, n.boot=1000, seed=1,
 
   na.df <- function(){
     data.frame(code=codes, family=fam, avail=NA_real_, used=NA_real_, w=NA_real_,
-               w_lo=NA_real_, w_hi=NA_real_, A=NA_real_, sig='na',
+               w_lo=NA_real_, w_hi=NA_real_, w_con=NA_real_, A=NA_real_, sig='na',
                n=n, n_pos=sum(E>0), stringsAsFactors=FALSE)
   }
   if(n < 10 || sum(E) <= 0 || sum(E>0) < min.pos) return(na.df())
@@ -130,18 +157,21 @@ fn.selection_ratios <- function(hab.stack, emp.ras, effort, n.boot=1000, seed=1,
   }
   w.lo <- apply(B, 2, stats::quantile, 0.025, na.rm=TRUE)
   w.hi <- apply(B, 2, stats::quantile, 0.975, na.rm=TRUE)
-  A    <- w / max(w, na.rm=TRUE)
+  # constrain the selection ratios (MUD=0, sand < rock/gravel) before forming affinities
+  names(w) <- codes
+  w.con <- if(!is.null(con) && isTRUE(con$apply)) fn.constrain_w(w, con) else w
+  A    <- w.con / max(w.con, na.rm=TRUE)
   sig  <- ifelse(is.na(w), 'na', ifelse(w.lo > 1, 'for', ifelse(w.hi < 1, 'against', 'ns')))
 
   data.frame(code=codes, family=fam,
              avail=round(avail,5), used=round(used,5), w=round(w,3),
-             w_lo=round(w.lo,3), w_hi=round(w.hi,3), A=round(A,3), sig=sig,
+             w_lo=round(w.lo,3), w_hi=round(w.hi,3), w_con=round(w.con,3), A=round(A,3), sig=sig,
              n=n, n_pos=sum(E>0), stringsAsFactors=FALSE)
 }
 
 #--- batch over every empirical MaxN layer in dir.emp -------------------------------------
 fn.batch_selection_ratios <- function(hab.stack, dir.emp, dir.out, effort,
-                                      n.boot=1000, seed=1, spec=LAYER.SPEC){
+                                      n.boot=1000, seed=1, spec=LAYER.SPEC, con=NULL){
   if(!dir.exists(dir.out)) dir.create(dir.out, recursive=TRUE)
   files <- list.files(dir.emp, pattern='\\.asc$', full.names=TRUE)
   files <- files[grepl('GFISHER_maxn_mod', basename(files))]
@@ -157,7 +187,7 @@ fn.batch_selection_ratios <- function(hab.stack, dir.emp, dir.out, effort,
     modname   <- sub('.*_mod\\d+_(.+)_5min_.*', '\\1', bn)
     cat(sprintf("  mod%-3d %s ...\n", modnumber, modname))
     emp <- raster(f)
-    sr  <- fn.selection_ratios(hab.stack, emp, effort, n.boot=n.boot, seed=seed, spec=spec)
+    sr  <- fn.selection_ratios(hab.stack, emp, effort, n.boot=n.boot, seed=seed, spec=spec, con=con)
     sr$coverage  <- cov$coverage[match(sr$code, cov$code)]
     sr$modnumber <- modnumber; sr$modname <- modname
     long[[bn]] <- sr
@@ -165,7 +195,7 @@ fn.batch_selection_ratios <- function(hab.stack, dir.emp, dir.out, effort,
   }
   long <- do.call(rbind, long)
   long <- long[, c('modnumber','modname','code','family','avail','used',
-                   'w','w_lo','w_hi','A','sig','coverage','n','n_pos')]
+                   'w','w_lo','w_hi','w_con','A','sig','coverage','n','n_pos')]
 
   # wide affinity table (rows = groups, cols = layers, value = A) for Ecospace input
   ord  <- spec$code
@@ -198,6 +228,9 @@ fn.batch_selection_ratios <- function(hab.stack, dir.emp, dir.out, effort,
                                p$modnumber, p$modname, s$n[1], s$n_pos[1]))
     suppressWarnings(arrows(bp, s$w_lo, bp, s$w_hi, angle=90, code=3, length=0.03, col='black'))
     abline(h=1, lty=2, col='blue')
+    # red dash = constrained selection ratio used for affinity (MUD=0, sand < rock/gravel)
+    chg <- which(!is.na(s$w_con) & (is.na(s$w) | abs(s$w_con - s$w) > 1e-9))
+    if(length(chg)) points(bp[chg], s$w_con[chg], pch=45, col='red', cex=2.4, lwd=2)
     sigp <- s$sig %in% c('for','against')
     if(any(sigp)) text(bp[sigp], s$w_hi[sigp], '*', pos=3, offset=0.2, col='black', cex=1.3)
   }
@@ -205,6 +238,8 @@ fn.batch_selection_ratios <- function(hab.stack, dir.emp, dir.out, effort,
   plot.new(); legend('center', title='availability coverage', bty='n',
                      fill=cov.col[c('good','partial','poor')],
                      legend=c('good','partial','poor (e.g. mud — not identifiable)'))
+  legend('bottom', bty='n', pch=45, col='red', pt.cex=2.4,
+         legend='red dash = constrained ratio used for affinity (MUD=0, sand < rock & gravel)')
   dev.off()
 
   cat('\nWrote:\n  ', f.long, '\n  ', f.wide, '\n  ', f.cov,
