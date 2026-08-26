@@ -9,9 +9,16 @@
 #   used_h  = sum(MaxN * H_h) / sum(MaxN)                  (MaxN-weighted use)
 #   w_h     = used_h / avail_h                             (selection ratio)
 #             w>1 selected FOR, w<1 selected AGAINST, w==1 used in proportion to availability.
-#   A_h     = w_h / max(w_h)                               (affinity in [0,1], best habitat = 1)
-# Every layer's ratio is on the same scale ("x more than its average availability"), so reef
-# and sediment affinities are directly comparable within a group.
+#   A_h     = w_h / max(w_h WITHIN FAMILY)                 (affinity in [0,1], best in family = 1)
+#
+# WHY within-family: w is bounded above by 1/avail_h, and the two families sit on very different
+# availability scales (reef layers average 1e-4..3e-2 of a cell, sediment 3e-2..6e-1). The four
+# dbSeabed layers are also a CLOSED COMPOSITION -- they sum to ~1 per cell, which pins their
+# availability-weighted mean w at ~1, so no group can select FOR all sediments. Normalizing over
+# all 10 layers at once therefore handed A=1 to a rare reef layer in every group and rescaled the
+# sediment affinities by an unrelated reef ratio. Normalizing inside each family removes that
+# artifact. The cost: reef A and sediment A are each on their own scale, so A=1 reads as "best
+# reef layer for this group" / "best sediment layer for this group", NOT "reef beats sediment".
 #
 # WHY surveyed-only: most water cells were never surveyed but are stored as 0 in the heatmaps;
 # including them would compare use against availability the cameras never visited.
@@ -27,10 +34,13 @@ suppressPackageStartupMessages(library('raster'))
 
 #--- layer spec: code -> filename pattern -> family. Default = the 10 layers above. -------
 # Extend this data.frame (e.g. add seagrass) to bring more layers into the analysis.
+# Row order sets the column order of the wide affinity table and the bar order in the PDF:
+# low -> medium -> high relief within each reef family, then the sediment family.
+# `family` also defines the normalization groups for A (see header).
 LAYER.SPEC <- data.frame(
-  code    = c('AH','AM','AL','NH','NM','NL','RCK','GVL','SND','MUD'),
-  pattern = c('AH_prop.*\\.asc$','AM_prop.*\\.asc$','AL_prop.*\\.asc$',
-              'NH_prop.*\\.asc$','NM_prop.*\\.asc$','NL_prop.*\\.asc$',
+  code    = c('AL','AM','AH','NL','NM','NH','RCK','GVL','SND','MUD'),
+  pattern = c('AL_prop.*\\.asc$','AM_prop.*\\.asc$','AH_prop.*\\.asc$',
+              'NL_prop.*\\.asc$','NM_prop.*\\.asc$','NH_prop.*\\.asc$',
               'gmf_RCK_val.*\\.asc$','gmf_GVL_val.*\\.asc$',
               'gmf_SND_val.*\\.asc$','gmf_MUD_val.*\\.asc$'),
   family  = c(rep('reef',6), rep('sediment',4)),
@@ -118,6 +128,23 @@ fn.constrain_w <- function(w, con=list()){
   w
 }
 
+#--- affinity from constrained selection ratios, normalized WITHIN each family ------------
+# w   : named numeric selection ratios (already constrained).
+# fam : family label per element of w ('reef' / 'sediment' / ...), same length as w.
+# Each family is rescaled by its own maximum, so the best reef layer and the best sediment
+# layer both come back as 1. See the header for why a single global max is not used.
+# A family whose ratios are all NA, all zero, or non-finite comes back as NA.
+fn.affinity_from_w <- function(w, fam){
+  A <- rep(NA_real_, length(w))
+  for(fm in unique(fam)){
+    j  <- which(fam == fm)
+    mx <- suppressWarnings(max(w[j], na.rm=TRUE))
+    if(is.finite(mx) && mx > 0) A[j] <- w[j] / mx
+  }
+  names(A) <- names(w)
+  A
+}
+
 #--- selection ratios for ONE empirical MaxN layer ----------------------------------------
 # Returns a per-layer data.frame: code, family, avail, used, w, w_lo, w_hi, w_con, A, sig.
 # When con$apply is TRUE the constraints above are applied to w -> w_con and A is derived from
@@ -160,7 +187,7 @@ fn.selection_ratios <- function(hab.stack, emp.ras, effort, n.boot=1000, seed=1,
   # constrain the selection ratios (MUD=0, sand < rock/gravel) before forming affinities
   names(w) <- codes
   w.con <- if(!is.null(con) && isTRUE(con$apply)) fn.constrain_w(w, con) else w
-  A    <- w.con / max(w.con, na.rm=TRUE)
+  A <- fn.affinity_from_w(w.con, fam)
   sig  <- ifelse(is.na(w), 'na', ifelse(w.lo > 1, 'for', ifelse(w.hi < 1, 'against', 'ns')))
 
   data.frame(code=codes, family=fam,
@@ -169,33 +196,100 @@ fn.selection_ratios <- function(hab.stack, emp.ras, effort, n.boot=1000, seed=1,
              n=n, n_pos=sum(E>0), stringsAsFactors=FALSE)
 }
 
+#--- split a modname into species base + stanza index -------------------------------------
+# Multi-stanza groups are named '<species>-<k>', with a trailing '-' on the plus group
+# ('gag-0' ... 'gag-5-'). Single-stanza groups ('sharks') get stanza NA and are never pooled.
+fn.parse_stanza <- function(modname){
+  has <- grepl('-\\d+-?$', modname)
+  data.frame(base   = ifelse(has, sub('-\\d+-?$', '', modname), modname),
+             stanza = suppressWarnings(as.integer(
+                        ifelse(has, sub('.*-(\\d+)-?$', '\\1', modname), NA))),
+             stringsAsFactors = FALSE)
+}
+
+#--- pool sparse stanzas with their nearest same-species neighbours -----------------------
+# A stanza observed in fewer than min.pos surveyed cells cannot support a selection ratio --
+# fn.selection_ratios returns an all-NA row for it. Rather than leave a hole to be patched by
+# hand downstream, merge its MaxN with the nearest stanza(s) of the SAME species (adding one
+# neighbour at a time, nearest stanza first) until the pooled layer clears min.pos, and fit
+# that instead. Neighbours keep their own independent fits -- only the sparse stanza's row
+# changes -- and `pooled_with` records what went into it so pooled rows stay identifiable.
+# info    : list of per-group records (see fn.batch_selection_ratios); each has $ras/$npos.
+# npos.fn : counts surveyed cells with MaxN>0 in a raster.
+fn.pool_sparse_stanzas <- function(info, npos.fn, min.pos=5){
+  nm  <- vapply(info, `[[`, character(1), 'modname')
+  stz <- fn.parse_stanza(nm)
+  sparse <- which(vapply(info, `[[`, integer(1), 'npos') < min.pos & !is.na(stz$stanza))
+  for(i in sparse){
+    cand <- setdiff(which(stz$base == stz$base[i] & !is.na(stz$stanza)), i)
+    if(length(cand) == 0) next
+    cand <- cand[order(abs(stz$stanza[cand] - stz$stanza[i]), stz$stanza[cand])]
+    ras <- info[[i]]$ras; part <- character(0); np <- info[[i]]$npos
+    for(j in cand){
+      ras  <- ras + info[[j]]$ras          # same grid & mask, so NA cells stay NA
+      part <- c(part, nm[j])
+      np   <- npos.fn(ras)
+      if(np >= min.pos) break
+    }
+    message(sprintf("    mod%d %s: only %d surveyed cell(s) with MaxN>0 -- pooled with %s (now %d)",
+                    info[[i]]$modnumber, nm[i], info[[i]]$npos, paste(part, collapse='+'), np))
+    info[[i]]$ras <- ras
+    info[[i]]$pooled_with <- paste(part, collapse='+')
+    info[[i]]$npos <- np
+  }
+  info
+}
+
 #--- batch over every empirical MaxN layer in dir.emp -------------------------------------
+# min.pos      : minimum surveyed cells with MaxN>0 required to fit a group.
+# pool.stanzas : TRUE (default) pools sparse stanzas with same-species neighbours first;
+#                FALSE reproduces the old behaviour of returning an all-NA row for them.
 fn.batch_selection_ratios <- function(hab.stack, dir.emp, dir.out, effort,
-                                      n.boot=1000, seed=1, spec=LAYER.SPEC, con=NULL){
+                                      n.boot=1000, seed=1, spec=LAYER.SPEC, con=NULL,
+                                      min.pos=5, pool.stanzas=TRUE){
   if(!dir.exists(dir.out)) dir.create(dir.out, recursive=TRUE)
   files <- list.files(dir.emp, pattern='\\.asc$', full.names=TRUE)
   files <- files[grepl('GFISHER_maxn_mod', basename(files))]
   if(length(files)==0) stop('no GFISHER_maxn_mod*.asc files found in ', dir.emp)
   files <- files[order(as.integer(sub('.*_mod(\\d+)_.*','\\1', basename(files))))]
 
+  # resolution tag read off the habitat grid rather than hardcoded, so a 15min run labels its
+  # outputs (and parses its modnames) correctly.
+  tag <- paste0(round(raster::res(hab.stack)[1]*60, 0), 'min')
+
   cov <- fn.availability_coverage(hab.stack, effort)   # per-layer, group-independent
 
+  # the cells fn.selection_ratios will actually use; MaxN>0 counted over these drives pooling
+  ev  <- getValues(effort)
+  ok0 <- stats::complete.cases(getValues(hab.stack)) & !is.na(ev) & ev > 0
+  npos.fn <- function(r){ v <- getValues(r)[ok0]; as.integer(sum(!is.na(v) & v > 0)) }
+
+  info <- lapply(files, function(f){
+    bn <- basename(f); r <- raster(f)
+    list(file=f, bn=bn,
+         modnumber   = as.integer(sub('.*_mod(\\d+)_.*', '\\1', bn)),
+         modname     = sub('.*_mod\\d+_(.+)_\\d+min_.*', '\\1', bn),
+         ras         = r,
+         npos        = npos.fn(r),
+         pooled_with = NA_character_)
+  })
+  if(isTRUE(pool.stanzas)) info <- fn.pool_sparse_stanzas(info, npos.fn, min.pos=min.pos)
+
   long <- list(); plots <- list()
-  for(f in files){
-    bn <- basename(f)
-    modnumber <- as.integer(sub('.*_mod(\\d+)_.*', '\\1', bn))
-    modname   <- sub('.*_mod\\d+_(.+)_5min_.*', '\\1', bn)
-    cat(sprintf("  mod%-3d %s ...\n", modnumber, modname))
-    emp <- raster(f)
-    sr  <- fn.selection_ratios(hab.stack, emp, effort, n.boot=n.boot, seed=seed, spec=spec, con=con)
+  for(p in info){
+    cat(sprintf("  mod%-3d %s ...\n", p$modnumber, p$modname))
+    sr  <- fn.selection_ratios(hab.stack, p$ras, effort, n.boot=n.boot, seed=seed,
+                               min.pos=min.pos, spec=spec, con=con)
     sr$coverage  <- cov$coverage[match(sr$code, cov$code)]
-    sr$modnumber <- modnumber; sr$modname <- modname
-    long[[bn]] <- sr
-    plots[[bn]] <- list(modname=modname, modnumber=modnumber, sr=sr)
+    sr$modnumber <- p$modnumber; sr$modname <- p$modname
+    sr$pooled_with <- p$pooled_with
+    long[[p$bn]] <- sr
+    plots[[p$bn]] <- list(modname=p$modname, modnumber=p$modnumber, sr=sr,
+                          pooled_with=p$pooled_with)
   }
   long <- do.call(rbind, long)
   long <- long[, c('modnumber','modname','code','family','avail','used',
-                   'w','w_lo','w_hi','w_con','A','sig','coverage','n','n_pos')]
+                   'w','w_lo','w_hi','w_con','A','sig','coverage','n','n_pos','pooled_with')]
 
   # wide affinity table (rows = groups, cols = layers, value = A) for Ecospace input
   ord  <- spec$code
@@ -205,27 +299,32 @@ fn.batch_selection_ratios <- function(hab.stack, dir.emp, dir.out, effort,
   wide <- wide[, c('modnumber','modname', ord[ord %in% names(wide)])]
   wide <- wide[order(wide$modnumber),]
 
-  f.long <- file.path(dir.out, 'selection_ratios_long_5min.csv')
-  f.wide <- file.path(dir.out, 'affinity_A_wide_5min.csv')
-  f.cov  <- file.path(dir.out, 'availability_coverage_5min.csv')
+  f.long <- file.path(dir.out, paste0('selection_ratios_long_', tag, '.csv'))
+  f.wide <- file.path(dir.out, paste0('affinity_A_wide_', tag, '.csv'))
+  f.cov  <- file.path(dir.out, paste0('availability_coverage_', tag, '.csv'))
+  f.pdf  <- file.path(dir.out, paste0('selection_ratio_fits_', tag, '.pdf'))
   write.csv(long, f.long, row.names=FALSE)
-  write.csv(wide, f.wide, row.names=FALSE)
+  write.csv(wide, f.wide, row.names=FALSE, quote=FALSE)  # modnames are already [A-Za-z0-9-] only
   write.csv(cov,  f.cov,  row.names=FALSE)
 
   # multipage PDF: per group, barplot of selection ratio w with bootstrap CI, line at w=1,
   # bars colored by coverage flag.
   cov.col <- c(good='grey35', partial='darkorange', poor='red3', none='grey80', na='grey80')
-  pdf(file.path(dir.out, 'selection_ratio_fits_5min.pdf'), width=10, height=7.5, onefile=TRUE)
+  pdf(f.pdf, width=10, height=7.5, onefile=TRUE)
   op <- par(mfrow=c(2,2), mar=c(4,4,3,1))
   for(p in plots){
     s <- p$sr; s <- s[match(ord, s$code),]
     if(all(is.na(s$w))){ plot.new(); title(paste0(p$modname,'\n(no fit)')); next }
     yhi <- max(s$w_hi, s$w, 1.05, na.rm=TRUE)
+    sub <- if(!is.na(p$pooled_with)) paste0('  [pooled with ', p$pooled_with, ']') else ''
     bp <- barplot(s$w, names.arg=s$code, las=2, ylim=c(0, yhi),
                   col=cov.col[s$coverage], border=NA,
                   ylab='selection ratio  (used / available)',
-                  main=sprintf('mod%d  %s\n(n=%d surveyed, %d with MaxN>0)',
-                               p$modnumber, p$modname, s$n[1], s$n_pos[1]))
+                  main=sprintf('mod%d  %s%s\n(n=%d surveyed, %d with MaxN>0)',
+                               p$modnumber, p$modname, sub, s$n[1], s$n_pos[1]))
+    # family boundaries: A is normalized within each of these blocks, not across them
+    fb <- which(diff(as.integer(factor(s$family, levels=unique(s$family)))) != 0)
+    if(length(fb)) abline(v=(bp[fb]+bp[fb+1])/2, lty=3, col='grey60')
     suppressWarnings(arrows(bp, s$w_lo, bp, s$w_hi, angle=90, code=3, length=0.03, col='black'))
     abline(h=1, lty=2, col='blue')
     # red dash = constrained selection ratio used for affinity (MUD=0, sand < rock/gravel)
@@ -238,12 +337,12 @@ fn.batch_selection_ratios <- function(hab.stack, dir.emp, dir.out, effort,
   plot.new(); legend('center', title='availability coverage', bty='n',
                      fill=cov.col[c('good','partial','poor')],
                      legend=c('good','partial','poor (e.g. mud — not identifiable)'))
-  legend('bottom', bty='n', pch=45, col='red', pt.cex=2.4,
-         legend='red dash = constrained ratio used for affinity (MUD=0, sand < rock & gravel)')
+  legend('bottom', bty='n', pch=c(45,NA), lty=c(NA,3), col=c('red','grey60'), pt.cex=2.4,
+         legend=c('constrained ratio used for affinity (MUD=0, sand < rock & gravel)',
+                  'family boundary — affinity A is normalized within each family'))
   dev.off()
 
-  cat('\nWrote:\n  ', f.long, '\n  ', f.wide, '\n  ', f.cov,
-      '\n  ', file.path(dir.out,'selection_ratio_fits_5min.pdf'), '\n', sep='')
+  cat('\nWrote:\n  ', f.long, '\n  ', f.wide, '\n  ', f.cov, '\n  ', f.pdf, '\n', sep='')
   invisible(list(long=long, wide=wide, coverage=cov))
 }
 
@@ -267,7 +366,8 @@ if(sys.nframe()==0){
   hab <- fn.load_layer_stack(dir.hab)
   cat("Building survey-effort raster from", basename(file.env), "...\n")
   eff <- fn.build_effort_raster(file.env, hab[[1]],
-           save.as=file.path(dir.out,'GFISHER_survey_effort_5min_66x78.asc'))
+           save.as=file.path(dir.out, sprintf('GFISHER_survey_effort_%dmin_%dx%d.asc',
+                                              round(raster::res(hab)[1]*60,0), nrow(hab), ncol(hab))))
   cat("  surveyed cells:", sum(getValues(eff)>0, na.rm=TRUE),
       " total stations:", sum(getValues(eff), na.rm=TRUE), "\n")
 
