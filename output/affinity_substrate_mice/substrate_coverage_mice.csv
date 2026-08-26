@@ -1,0 +1,5 @@
+"code","family","mean_at_stations","mean_over_grid","targeting","n_stations_gt","coverage"
+"GVL","grainsize",0.2848,0.1763,1.615,2399,"good"
+"SND","grainsize",0.6532,0.5154,1.267,8266,"good"
+"MUD","grainsize",0.0619,0.3083,0.201,288,"poor"
+"RCK","rock",0.1435,0.1036,1.386,1460,"good"
