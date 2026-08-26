@@ -1,8 +1,15 @@
 # selection_ratio_affinities.R --------------------------------------------------
 # Estimate habitat affinities for each model group from empirical MaxN heatmaps using
-# a continuous use-vs-availability SELECTION RATIO (Manly-style), over the 10 habitat
-# layers: 6 GFISHER reef classes (AH,AM,AL,NH,NM,NL) + 4 dbSeabed sediment classes
-# (RCK,GVL,SND,MUD).
+# a continuous use-vs-availability SELECTION RATIO (Manly-style), over the sum-to-1 habitat
+# basemaps written by R/habitat_basemaps.R: 6 GFISHER reef classes (AL,AM,AH,NL,NM,NH) plus
+# rock, unconsolidated bottom and seagrass (RCK,UNC,SGR). See BASEMAP.SPEC below.
+#
+# This is the RASTER route, and it is one of three. It compares MaxN-weighted habitat use
+# against availability averaged over model cells, so it inherits their scale: at 5 min a cell
+# is ~9 km across while the camera saw one ~200 m spot. R/site_level_affinities.R estimates
+# the same reef affinities at the station instead, and R/substrate_affinities.R handles the
+# rock/gravel/sand/mud split from raw dbSeabed. Where they disagree, prefer the one whose
+# support scale matches the question.
 #
 # Method (per group, restricted to SURVEYED cells, effort>0):
 #   avail_h = mean H_h over surveyed cells                 (availability)
@@ -32,12 +39,45 @@
 
 suppressPackageStartupMessages(library('raster'))
 
-#--- layer spec: code -> filename pattern -> family. Default = the 10 layers above. -------
-# Extend this data.frame (e.g. add seagrass) to bring more layers into the analysis.
+#--- layer spec: code -> filename pattern -> family ---------------------------------------
 # Row order sets the column order of the wide affinity table and the bar order in the PDF:
-# low -> medium -> high relief within each reef family, then the sediment family.
+# low -> medium -> high relief within the reef family, then bottom cover.
 # `family` also defines the normalization groups for A (see header).
-LAYER.SPEC <- data.frame(
+#
+# BASEMAP.SPEC (default) reads the sum-to-1 layers written by R/habitat_basemaps.R. Those
+# nine layers partition the cell, so all of them sit in ONE closed composition rather than
+# the old open reef set plus a separate closed sediment set. Within-family normalization
+# still matters, because reef layers average 3e-5..1.3e-2 of a cell against UNC's 0.86 and
+# a single global max would hand A=1 to a rare reef layer every time.
+#
+# SEAGRASS IS DELIBERATELY EXCLUDED. The basemap still carries an SGR layer -- it has to, for
+# the layers to sum to 1 -- but it is not identifiable from this survey: only 7.5% of the
+# top-decile seagrass cells were ever surveyed and the sampled range reaches 67% of the layer
+# maximum, so fn.availability_coverage flags it 'poor'. Included, it produced A=1.000 for six
+# groups and A=0.000 for three red grouper stanzas off a handful of cells. Add 'SGR' back only
+# if the survey footprint changes.
+#
+# Detailed substrate (rock / gravel / sand / mud) is NOT obtained here -- the basemap carries
+# unconsolidated bottom as a single UNC layer. That split comes from R/substrate_affinities.R,
+# which reads raw dbSeabed at its native 1.2 arc-min where the contrast actually exists.
+#
+# CAVEAT on the bottom family: with only RCK and UNC in it, and the two together covering ~97%
+# of a cell, they are close to a closed two-part composition. w_RCK and w_UNC are therefore
+# strongly anti-correlated and one of them is A=1 almost by construction. Read the bottom
+# family as "rock vs unconsolidated preference", not as two independent affinities.
+BASEMAP.SPEC <- data.frame(
+  code    = c('AL','AM','AH','NL','NM','NH','RCK','UNC'),
+  pattern = paste0('^habitat_', c('AL','AM','AH','NL','NM','NH','RCK','UNC'),
+                   '_.*\\.asc$'),
+  family  = c(rep('reef',6), rep('bottom',2)),
+  stringsAsFactors = FALSE)
+
+# LEGACY.SPEC reads the retired input_ascii_sum1/ layers -- the cell-area reef proportions
+# and the processed gmf_*_val sediment layers. Kept so an older run can be reproduced, but
+# see R/habitat_basemaps.R and R/substrate_affinities.R for why both are superseded: the reef
+# proportions divide by cell area rather than scanned area, and the sediment layers
+# renormalize rock against the grain-size triangle and treat NODATA as zero.
+LEGACY.SPEC <- data.frame(
   code    = c('AL','AM','AH','NL','NM','NH','RCK','GVL','SND','MUD'),
   pattern = c('AL_prop.*\\.asc$','AM_prop.*\\.asc$','AH_prop.*\\.asc$',
               'NL_prop.*\\.asc$','NM_prop.*\\.asc$','NH_prop.*\\.asc$',
@@ -45,6 +85,8 @@ LAYER.SPEC <- data.frame(
               'gmf_SND_val.*\\.asc$','gmf_MUD_val.*\\.asc$'),
   family  = c(rep('reef',6), rep('sediment',4)),
   stringsAsFactors = FALSE)
+
+LAYER.SPEC <- BASEMAP.SPEC   # default for every fn.* below
 
 #--- load the habitat layers named in `spec`, labelled by code, as a RasterStack ----------
 fn.load_layer_stack <- function(dir.hab, spec=LAYER.SPEC){
@@ -134,10 +176,26 @@ fn.constrain_w <- function(w, con=list()){
 # Each family is rescaled by its own maximum, so the best reef layer and the best sediment
 # layer both come back as 1. See the header for why a single global max is not used.
 # A family whose ratios are all NA, all zero, or non-finite comes back as NA.
-fn.affinity_from_w <- function(w, fam){
+# normalize = 'global' (default) rescales every layer by ONE maximum. 'family' rescales each
+# family by its own.
+#
+# 'family' was the right call for the retired input_ascii_sum1 layers, where a global max
+# handed A=1 to a rare reef layer in all 18 fitted groups and never once to a sediment layer.
+# It is the WRONG call for the sum-to-1 basemaps. Those layers are one partition of the cell
+# and their realized ratios are all modest -- AL 0.15-2.14, AH 0.82-2.92, NH 0.77-2.78,
+# RCK 0.62-1.68, UNC 0.93-1.02 -- so the rarity artifact stays theoretical: under a global max
+# the winning layer is spread across AH/AL/AM/NH/NL, never RCK or UNC.
+#
+# Normalizing per family instead forced the bottom pair up to A=1 for most groups, telling
+# Ecospace that reef fish prefer unconsolidated bottom as strongly as they prefer reef. Under
+# a global max the reef columns are UNCHANGED (the maximum always falls in the reef family
+# anyway) and mean bottom affinity drops from 0.91/0.89 to 0.56/0.53, which is the intended
+# behaviour for reef-associated groups.
+fn.affinity_from_w <- function(w, fam, normalize='global'){
   A <- rep(NA_real_, length(w))
-  for(fm in unique(fam)){
-    j  <- which(fam == fm)
+  grp <- if(identical(normalize, 'family')) fam else rep('all', length(w))
+  for(fm in unique(grp)){
+    j  <- which(grp == fm)
     mx <- suppressWarnings(max(w[j], na.rm=TRUE))
     if(is.finite(mx) && mx > 0) A[j] <- w[j] / mx
   }
@@ -152,7 +210,7 @@ fn.affinity_from_w <- function(w, fam){
 # n.boot bootstrap resamples of surveyed cells give a 95% CI on w; sig = 'for'/'against'/'ns'
 # from whether that CI clears 1. min.pos guards groups with too few non-zero MaxN cells.
 fn.selection_ratios <- function(hab.stack, emp.ras, effort, n.boot=1000, seed=1,
-                                min.pos=5, spec=LAYER.SPEC, con=NULL){
+                                min.pos=5, spec=LAYER.SPEC, con=NULL, normalize='global'){
   if(!compareRaster(hab.stack, emp.ras, extent=TRUE, rowcol=TRUE, crs=FALSE, stopiffalse=FALSE))
     stop("habitat stack and empirical raster do not share the same grid")
   H <- getValues(hab.stack); E <- getValues(emp.ras); ev <- getValues(effort)
@@ -187,7 +245,7 @@ fn.selection_ratios <- function(hab.stack, emp.ras, effort, n.boot=1000, seed=1,
   # constrain the selection ratios (MUD=0, sand < rock/gravel) before forming affinities
   names(w) <- codes
   w.con <- if(!is.null(con) && isTRUE(con$apply)) fn.constrain_w(w, con) else w
-  A <- fn.affinity_from_w(w.con, fam)
+  A <- fn.affinity_from_w(w.con, fam, normalize=normalize)
   sig  <- ifelse(is.na(w), 'na', ifelse(w.lo > 1, 'for', ifelse(w.hi < 1, 'against', 'ns')))
 
   data.frame(code=codes, family=fam,
@@ -245,7 +303,7 @@ fn.pool_sparse_stanzas <- function(info, npos.fn, min.pos=5){
 # pool.stanzas : TRUE (default) pools sparse stanzas with same-species neighbours first;
 #                FALSE reproduces the old behaviour of returning an all-NA row for them.
 fn.batch_selection_ratios <- function(hab.stack, dir.emp, dir.out, effort,
-                                      n.boot=1000, seed=1, spec=LAYER.SPEC, con=NULL,
+                                      n.boot=1000, seed=1, spec=LAYER.SPEC, con=NULL, normalize='global',
                                       min.pos=5, pool.stanzas=TRUE){
   if(!dir.exists(dir.out)) dir.create(dir.out, recursive=TRUE)
   files <- list.files(dir.emp, pattern='\\.asc$', full.names=TRUE)
@@ -279,7 +337,7 @@ fn.batch_selection_ratios <- function(hab.stack, dir.emp, dir.out, effort,
   for(p in info){
     cat(sprintf("  mod%-3d %s ...\n", p$modnumber, p$modname))
     sr  <- fn.selection_ratios(hab.stack, p$ras, effort, n.boot=n.boot, seed=seed,
-                               min.pos=min.pos, spec=spec, con=con)
+                               min.pos=min.pos, spec=spec, con=con, normalize=normalize)
     sr$coverage  <- cov$coverage[match(sr$code, cov$code)]
     sr$modnumber <- p$modnumber; sr$modname <- p$modname
     sr$pooled_with <- p$pooled_with
@@ -322,7 +380,7 @@ fn.batch_selection_ratios <- function(hab.stack, dir.emp, dir.out, effort,
                   ylab='selection ratio  (used / available)',
                   main=sprintf('mod%d  %s%s\n(n=%d surveyed, %d with MaxN>0)',
                                p$modnumber, p$modname, sub, s$n[1], s$n_pos[1]))
-    # family boundaries: A is normalized within each of these blocks, not across them
+    # family divider, for reading only -- with normalize='global' A is scaled by one maximum
     fb <- which(diff(as.integer(factor(s$family, levels=unique(s$family)))) != 0)
     if(length(fb)) abline(v=(bp[fb]+bp[fb+1])/2, lty=3, col='grey60')
     suppressWarnings(arrows(bp, s$w_lo, bp, s$w_hi, angle=90, code=3, length=0.03, col='black'))
@@ -339,7 +397,7 @@ fn.batch_selection_ratios <- function(hab.stack, dir.emp, dir.out, effort,
                      legend=c('good','partial','poor (e.g. mud — not identifiable)'))
   legend('bottom', bty='n', pch=c(45,NA), lty=c(NA,3), col=c('red','grey60'), pt.cex=2.4,
          legend=c('constrained ratio used for affinity (MUD=0, sand < rock & gravel)',
-                  'family boundary — affinity A is normalized within each family'))
+                  'family divider (reef | bottom); A is scaled by one global maximum'))
   dev.off()
 
   cat('\nWrote:\n  ', f.long, '\n  ', f.wide, '\n  ', f.cov, '\n  ', f.pdf, '\n', sep='')
