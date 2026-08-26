@@ -109,25 +109,26 @@ maxn.stack <- fn.make_GFISHER_maxn_maps(maxn, depth, plot=T, fun=mean, backgroun
                                         save.format='all')        # one layer per model group
 
 #STAGE 4a -- HABITAT AFFINITIES FROM SELECTION RATIOS (raster route)---------------------------------
-# Sourcing only defines the functions (its own driver block is guarded), so we call the batch directly
-# on the scheme's MaxN maps + the 10 habitat/sediment layers from the external Ecospace maps tree.
+# Sourcing only defines the functions (its own driver block is guarded), so we call the batch
+# directly on the scheme's MaxN maps + the STAGE 1 basemaps built above.
 source("R/selection_ratio_affinities.R")
-dir.hab <- file.path(dir.ecospace.maps,'input_ascii_sum1',paste0(res,'min'))
+dir.hab <- dir.basemaps                      # the sum-to-1 layers from stage 1
 dir.aff <- file.path(dir.gfisher,'output',paste0('affinity_selratio_',group.scheme))
 if(!dir.exists(dir.aff)) dir.create(dir.aff, recursive=TRUE)
-# Prior habitat constraints imposed on the empirical selection ratios before forming affinities:
-#   - MUD forced to 0 (not identifiable from the reef-targeted video survey)
-#   - SAND forced strictly below both ROCK and GRAVEL (hard substrate preferred), 5% margin.
-# Set apply=FALSE for the raw, unconstrained affinities.
-# NOTE on the affinity scale: A is normalized WITHIN each layer family (6 reef, 4 sediment), so
-# A=1 marks the best reef layer AND the best sediment layer for a group. Reef and sediment A are
-# therefore on separate scales and should not be compared across families -- see the header of
-# R/selection_ratio_affinities.R for why a single global max was an artifact of layer rarity.
+# A is normalized WITHIN each layer family -- 6 reef (AL..NH) and 3 bottom (RCK/UNC/SGR) -- so
+# A=1 marks the best reef layer AND, separately, the best bottom layer. The two are on separate
+# scales and must not be compared across families: reef layers average 3e-5..1.3e-2 of a cell
+# against UNC's 0.86, so a single global max would hand A=1 to a rare reef layer every time.
 # Stanzas with too few MaxN>0 cells to fit (e.g. red-grouper-1) are pooled with their nearest
-# same-species stanza before fitting; the long table's `pooled_with` column flags those rows.
-affinity.constraints <- list(apply=TRUE, zero.codes='MUD', sand.code='SND',
-                             hard.codes=c('RCK','GVL'), sand.margin=0.05)
-hab <- fn.load_layer_stack(dir.hab)
+# same-species stanza; the long table's `pooled_with` column flags those rows.
+#
+# The MUD/SAND prior constraints that used to sit here are INERT against the basemaps, which
+# carry unconsolidated bottom as one UNC layer rather than a GVL/SND/MUD split. The constraint
+# machinery still exists (fn.constrain_w silently skips codes that are absent) -- it applies to
+# LEGACY.SPEC runs. For the rock/gravel/sand/mud split, use STAGE 4c below, which reads raw
+# dbSeabed at native resolution where that contrast actually exists.
+affinity.constraints <- list(apply=FALSE)
+hab <- fn.load_layer_stack(dir.hab)           # spec defaults to BASEMAP.SPEC
 eff <- fn.build_effort_raster(file.env, hab[[1]],
          save.as=file.path(dir.aff, paste0('GFISHER_survey_effort_',res,'min_',nrow(hab),'x',ncol(hab),'.asc')))
 aff <- fn.batch_selection_ratios(hab, dir.emp=dir.maxn, dir.out=dir.aff, effort=eff, n.boot=1000,
@@ -159,3 +160,22 @@ print(site$wide.depth)   # A, depth as a continuous covariate
 
 
 
+
+#STAGE 4c -- SUBSTRATE AFFINITIES FROM RAW dbSEABED-------------------------------------------------
+# The rock/gravel/sand/mud split, estimated independently of both routes above: nothing conditions
+# on reef type, and A is normalized only within the substrate families. Reads the RAW dbSeabed
+# grids at their native 1.2 arc-min (dir.dbseabed, set in STAGE 1), because the processed 5-min
+# layers renormalize rock against the grain-size triangle and treat NODATA as zero -- at 5 min only
+# 13 stations in ONE cell sit on >=50% rock, versus 914 stations in 162 cells at native resolution.
+#
+# Two families: GVL/SND/MUD as a closed grain-size triangle, and RCK scored against its complement,
+# because dbSeabed's rock is a separate areal fraction rather than a fourth member of the triangle.
+# Requires R/site_level_affinities.R (sourced in STAGE 4b) for the shared station frame.
+source("R/substrate_affinities.R")
+dir.sub <- file.path(dir.gfisher,'output',paste0('affinity_substrate_',group.scheme))
+sub <- fn.batch_substrate_affinities(maxn, file.env, bbox, dir.raw=dir.dbseabed, dir.out=dir.sub,
+                                     file.gdb=file.gdb, n.boot=1000, tag=group.scheme)
+print(sub$wide.strat)   # A, stratified by SPACE_STRAT
+print(sub$wide.depth)   # A, standardized over depth bins
+# NOTE: check sub$coverage before using the MUD column -- the survey avoided mud (targeting ~0.20),
+# so it is flagged 'poor' and its ratio is not identifiable.
