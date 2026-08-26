@@ -9,6 +9,11 @@ output/maps/15min/
 # generated habitat-affinity outputs (scheme-tagged, e.g. affinity_selratio_mice/)
 output/affinity_selratio*/
 
+# NOT ignored, deliberately: output/basemaps/5min/ holds the sum-to-1 habitat layers that
+# feed Ecospace and is a VERSIONED DELIVERABLE. Stage 1 of the driver overwrites it in place,
+# so changes there should show up in git diff. Do not add a blanket output/ rule above this.
+!output/basemaps/5min/
+
 # large local-only inputs (user supplies their own copy of the geodatabase)
 data/*.gdb/
 data/**/*.gdb/
