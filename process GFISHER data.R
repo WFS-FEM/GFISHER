@@ -1,5 +1,9 @@
 rm(list=ls());rm(.SavedPlots);graphics.off();gc();windows(record=T)
-source(file.path('R','GFISHER functions.R'))
+# Map-building code is split by stage. The former 'R/GFISHER functions.R' was divided into
+# video_dataset.R / maxn_maps.R, with its cell-area habitat maps retired to R/legacy/.
+source(file.path('R','video_dataset.R'))      # STAGE 2: station x group MaxN table
+source(file.path('R','maxn_maps.R'))          # STAGE 3: per-group MaxN heatmaps
+source(file.path('R','habitat_basemaps.R'))   # STAGE 1: sum-to-1 habitat basemaps
 library('terra')
 
 #=========================== USER INPUTS ============================================================
@@ -62,19 +66,40 @@ if(!group.scheme %in% names(group.schemes)) stop("unknown group.scheme: ", group
 group.cols <- group.schemes[[group.scheme]]
 
 #====================================================================================================
-#MAKE HABITAT MAPS---------------------------------------------------------------------------------------
-# file.gdb and res come from the USER INPUTS block at the top of this script.
-fn.make_GFISHER_habitat_maps(depth=depth, file.gdb=file.gdb, dir.maps=dir.maps)
-fn.plot_GFISHER_habitats(dir.maps=file.path(dir.maps,paste0(res,'min')))
+#STAGE 1 -- HABITAT BASEMAPS------------------------------------------------------------------------
+# Nine layers summing to exactly 1 in every water cell: the six GFISHER reef classes, rock and
+# unconsolidated bottom from raw dbSeabed, and seagrass. See the header of R/habitat_basemaps.R
+# for what this changed relative to the retired cell-area maps (now in R/legacy/).
+#
+# dir.dbseabed: RAW dbSeabed grids at their native 1.2 arc-min, i.e. the Gmf_<CLS>/ folders
+# written by fn.pull_dbseabed in the EnvironmentalDrivers2EwE repo. NOT the processed 5-min
+# gmf_*_prop_*.asc layers, which renormalize rock against the grain-size triangle and convert
+# the -99 NODATA flag to zero.
+dir.dbseabed <- "C:/dchagaris/GitHub/WFS-FEM/EnvironmentalDrivers2EwE/data/dbSEABED"
+file.seagrass <- file.path(dir.ecospace.maps,'input_ascii_sum1',paste0(res,'min'),
+                           paste0('seagrass_',res,'min.asc'))
+dir.basemaps <- file.path(dir.gfisher,'output','basemaps',paste0(res,'min'))
+basemaps <- fn.make_habitat_basemaps(depth=depth, file.gdb=file.gdb, dir.raw=dir.dbseabed,
+              dir.out=dir.basemaps,
+              file.sgr=if(file.exists(file.seagrass)) file.seagrass else NULL,
+              k='auto',            # per-class shrinkage constant from the variance structure
+              target='stratum',    # borrow from the region x depth-bin mean; see header
+              depth.max.reef=300)  # deepest cell in which GFISHER observed any reef class
+fn.plot_habitat_basemaps(dir.basemaps)
 
-#PREPARE VIDEO DATASET------------------------------------------------------------------------------
+# The retired cell-area maps, if you need to reproduce an older Ecospace run:
+#   source(file.path('R','legacy','habitat_maps_cellarea.R'))
+#   fn.make_GFISHER_habitat_maps(depth=depth, file.gdb=file.gdb, dir.maps=dir.maps)
+#   fn.plot_GFISHER_habitats(dir.maps=file.path(dir.maps,paste0(res,'min')))
+
+#STAGE 2 -- PREPARE VIDEO DATASET-------------------------------------------------------------------
 # Grouping columns come from the SPECIES GROUPING SCHEME block above, so the scheme is set in one place.
 maxn <- fn.make_gfisher_videodataset(file.maxn, file.env, file.len, bbox, file.spplist,
                                      col.modnum=group.cols[['modnum']],
                                      col.modname=group.cols[['modname']],
                                      col.fg=group.cols[['fg']])
 
-#FISH MAXN HEATMAPS-----------------------------------------------------------------------------------
+#STAGE 3 -- FISH MAXN HEATMAPS----------------------------------------------------------------------
 # Outputs are scheme-tagged (.../maxn/<scheme>/) so different groupings coexist without clobbering.
 class(maxn)
 graphics.off();rm(.SavedPlots);windows(record=T)
@@ -83,7 +108,7 @@ maxn.stack <- fn.make_GFISHER_maxn_maps(maxn, depth, plot=T, fun=mean, backgroun
                                         dir.out=dir.maxn,
                                         save.format='all')        # one layer per model group
 
-#HABITAT AFFINITIES FROM SELECTION RATIOS-----------------------------------------------------------
+#STAGE 4a -- HABITAT AFFINITIES FROM SELECTION RATIOS (raster route)---------------------------------
 # Sourcing only defines the functions (its own driver block is guarded), so we call the batch directly
 # on the scheme's MaxN maps + the 10 habitat/sediment layers from the external Ecospace maps tree.
 source("R/selection_ratio_affinities.R")
@@ -94,6 +119,12 @@ if(!dir.exists(dir.aff)) dir.create(dir.aff, recursive=TRUE)
 #   - MUD forced to 0 (not identifiable from the reef-targeted video survey)
 #   - SAND forced strictly below both ROCK and GRAVEL (hard substrate preferred), 5% margin.
 # Set apply=FALSE for the raw, unconstrained affinities.
+# NOTE on the affinity scale: A is normalized WITHIN each layer family (6 reef, 4 sediment), so
+# A=1 marks the best reef layer AND the best sediment layer for a group. Reef and sediment A are
+# therefore on separate scales and should not be compared across families -- see the header of
+# R/selection_ratio_affinities.R for why a single global max was an artifact of layer rarity.
+# Stanzas with too few MaxN>0 cells to fit (e.g. red-grouper-1) are pooled with their nearest
+# same-species stanza before fitting; the long table's `pooled_with` column flags those rows.
 affinity.constraints <- list(apply=TRUE, zero.codes='MUD', sand.code='SND',
                              hard.codes=c('RCK','GVL'), sand.margin=0.05)
 hab <- fn.load_layer_stack(dir.hab)
@@ -102,6 +133,28 @@ eff <- fn.build_effort_raster(file.env, hab[[1]],
 aff <- fn.batch_selection_ratios(hab, dir.emp=dir.maxn, dir.out=dir.aff, effort=eff, n.boot=1000,
                                  con=affinity.constraints)
 print(aff$wide)
+
+#STAGE 4b -- HABITAT AFFINITIES FROM SITE-LEVEL PAIRED CAMERA + HABITAT DATA-------------------------
+# Independent of the raster route above: works from the video stations themselves rather than from
+# 5-min cells, in two families read AT the site --
+#   reef      : HAB_STRAT, the side-scan habitat class, collapsed to the six Ecospace classes.
+#   substrate : ARTI_PER/ROCK_PER/SED_PER percent cover scored from the video, as ART/RCK/SED.
+#               The finer in-situ reads (shell-gravel, silt-sand-clay) exist on too few stations
+#               to separate GVL/SND/MUD, so that split still has to come from dbSeabed.
+# Because the survey targeted geoforms, availability is set by the sampler, so this estimates
+# relative DENSITY (mean MaxN per station, zeros retained) per class rather than a use/availability
+# ratio, normalized within each family. Stanzas seen at fewer than min.pos stations are pooled with
+# their nearest same-species stanza (the long table's `pooled_with` column flags those rows).
+# Habitat class is confounded with depth (mean station depth 75.8 m in NM vs 26.8 m in AM), so two
+# adjustments are produced side by side; classes ranking the same way under both are the ones the
+# habitat signal actually supports. See the header of R/site_level_affinities.R.
+source("R/site_level_affinities.R")
+dir.site <- file.path(dir.gfisher,'output',paste0('affinity_site_',group.scheme))
+site <- fn.batch_site_affinities(maxn, file.env, bbox, dir.out=dir.site,
+                                 file.gdb=file.gdb,     # stratum weights = mapped microgrid shares
+                                 n.boot=300, tag=group.scheme)
+print(site$wide.strat)   # A, stratified by SPACE_STRAT
+print(site$wide.depth)   # A, depth as a continuous covariate
 
 
 
