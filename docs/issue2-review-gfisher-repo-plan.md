@@ -95,7 +95,35 @@ committed and still describes the USER INPUTS block.
 
 ### 4.1 Baseline run (merged branch, unmodified)
 
-*Pending: requires `data/April2026/` and the external map trees on Holden's machine.*
+*Pending.* Setup on Holden's machine (1 Oct 2026): `data/April2026` is a Windows directory
+junction to the OneDrive copy of Dave's folder (`New-Item -ItemType Junction`), so the files
+are not duplicated and git ignores the path. The dbSEABED and seagrass inputs are taken from
+the local `EcospaceBasemap` repo (section 4.2); Dave's OneDrive Ecospace maps tree is not
+synced to Holden's machine and is not needed.
+
+### 4.2 Data not in the repository
+
+Everything the pipeline reads that is **not** under `data/` in this repo, with size and where
+an external user obtains it. The two legacy geodatabases that *are* tracked
+(`East_Master_Hab_data_Dissolve_byMicro_13Sept24.gdb`, 78 MB, one dissolved layer;
+`FWRI_East_Gulf_Mapping_2023.gdb`, 125 MB, 2023 vintage of the two layers below) are read by
+no current code and are untracked in this PR.
+
+| Input | Size | Used by | Source | How a user gets it |
+|---|---|---|---|---|
+| `GFISHER_EAST_Universe_2026.gdb` (layers `East_Master_Hab_Data_FINAL_2026`, `East_Master_Microgrid_Mapped_2026`) | 275 MB | Stage 1, 4b, 4c | FWRI (Sean Keenan), GFISHER side-scan habitat mapping, April 2026 delivery | Request from FWRI or Dave; place in `dir.data` |
+| `maxn3LABS_93to24.csv` | 23 MB | Stage 2 | FWRI 3LABS video survey 1993 to 2024, April 2026 delivery | Same |
+| `env3LABS_93to24.csv` | 6 MB | Stage 2, 4a, 4b, 4c | Same | Same |
+| `lens3LABS_93to24.csv` | 13 MB | Stage 2 | Same | Same |
+| `3LABS_METADATA_93to24.xlsx` | 1.6 MB | Not read by code; documents the CSVs | Same | Same (optional) |
+| dbSEABED raw grids `Gmf_{RCK,GVL,SND,MUD}/gmf_*_val.asc` (891 x 383 cells at 0.02 deg) | 8.6 MB total | Stage 1, 4c | CSDMS dbSEABED "Data for Modellers", https://csdms.colorado.edu/wiki/DBSEABED | Public download; `EcospaceBasemap` has `fn.pull_dbseabed()` that fetches the four zips. Could ship with this repo (small) |
+| Seagrass raster `seagrass_<res>min.asc` on the model grid | 44 KB | Stage 1 | Derived from FWC "Seagrass Habitat in Florida" (shapefile, 329 MB), https://geodata.myfwc.com/datasets/myfwc::seagrass-habitat-in-florida ; rasterised to 5 min by `EcospaceBasemap` (`seagrass_coverage_Seagrass_Statewide_5min.asc`) | Copy from `EcospaceBasemap/output/5min/habitat/seagrass/`, or ship with this repo (small). Match to the committed SGR layer: same 212 non-zero cells, r = 0.985; exactness confirmed by the baseline run |
+
+**To do (README, Phase 4):** add a "Getting the data" section with this table (ships / public
+download / request from FWRI), the expected `data/` tree, and the `config.local.R` keys that
+point at each item, so an external user can locate every input and reproduce the analysis.
+Decide with Dave whether the two small public-derived inputs (dbSEABED grids, seagrass raster)
+should ship in `data/` so only the FWRI files need requesting.
 
 ## 5. Fix design
 
