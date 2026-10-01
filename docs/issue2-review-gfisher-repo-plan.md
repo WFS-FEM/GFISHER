@@ -63,6 +63,7 @@ Line numbers refer to the merged branch at commit `3e4dea1`.
 | R2 | `output/basemaps/` | Committed basemaps include seagrass (`SGR` mean about 0.012), which needs `seagrass_<res>min.asc` from the Ecospace maps tree. Without it the code runs with `SGR = 0` and cannot reproduce the committed layers. |
 | R3 | `.gitignore` vs `git ls-files` | 30 output files and 97 geodatabase files are tracked although `.gitignore` matches them. Two legacy geodatabases (`East_Master_Hab_data_Dissolve_byMicro_13Sept24.gdb`, `FWRI_East_Gulf_Mapping_2023.gdb`, about 200 MB) are referenced by no code. `data/Video Count Data4ChagarisTake2.xlsx` (14 MB) is referenced only in a comment. |
 | R4 | `output/affinity_selratio/` | Untagged output folder that no current code writes (current code writes `affinity_selratio_<scheme>/`). |
+| R5 | `R/selection_ratio_affinities.R`, `fn.build_effort_raster` | Stations lying exactly on a grid line are assigned to different cells on different machines (`raster::rasterize(fun='count')` boundary rule varies with package version). Found by the baseline run, section 4.1. |
 
 ### 3.3 Bugs and fragility
 
@@ -95,11 +96,65 @@ committed and still describes the USER INPUTS block.
 
 ### 4.1 Baseline run (merged branch, unmodified)
 
-*Pending.* Setup on Holden's machine (1 Oct 2026): `data/April2026` is a Windows directory
-junction to the OneDrive copy of Dave's folder (`New-Item -ItemType Junction`), so the files
-are not duplicated and git ignores the path. The dbSEABED and seagrass inputs are taken from
-the local `EcospaceBasemap` repo (section 4.2); Dave's OneDrive Ecospace maps tree is not
-synced to Holden's machine and is not needed.
+Run on 1 Oct 2026 on Holden's machine (Windows 11, R 4.5.1, raster 3.6-32, terra 1.8-80,
+sf 1.0-21) with `Rscript` on a copy of the driver at commit `b544821` in which exactly two
+lines were changed: `dir.dbseabed` pointed at `EcospaceBasemap/data/dbseabed` and
+`file.seagrass` at `EcospaceBasemap/output/5min/habitat/seagrass/seagrass_coverage_Seagrass_Statewide_5min.asc`.
+`data/April2026` is a Windows directory junction to the OneDrive copy of Dave's folder, so
+the files are not duplicated and git ignores the path. Dave's OneDrive Ecospace maps tree is
+not synced to Holden's machine and was not needed.
+
+**Result: all stages ran to completion. Exit code 0. Wall time 15 min 39 s.**
+
+| Stage | Ran | Log evidence |
+|---|---|---|
+| 1 basemaps | yes | 309,348 microgrids, 141,053 habitat polygons; 1,495 of 3,838 water cells mapped; QC row sum min 1 max 1; wrote 9 layers |
+| 2 video dataset | yes | "Dropping 52471 record(s) with missing modnumber, maxn, or coordinates" |
+| 3 MaxN maps | yes | 19 group rasters + PDF written |
+| 4a selection ratios | yes | red-grouper-1 pooled with red-grouper-0 (3 cells with MaxN>0); 4 files written |
+| 4b site affinities | yes | 4 files written |
+| 4c substrate affinities | yes | 5 files written |
+
+Warnings only: `rm(.SavedPlots)` object not found (P3); packages built under a newer R
+patch release; one GDAL `organizePolygons()` performance message while reading the
+geodatabase. `windows(record=T)` ran under `Rscript` on Windows without error.
+
+**Comparison with the committed outputs** (MD5 of all 54 tracked `.asc`/`.csv` files
+before and after; no line-ending-only differences were found):
+
+| Output group | Identical | Changed | Cause |
+|---|---|---|---|
+| `output/basemaps/15min/` (10 files) | 10 | 0 | not regenerated at `res = 5` |
+| `output/basemaps/5min/` (10 files) | 0 | 10 | seagrass input only, see below |
+| `output/maps/.../maxn/mice/` (19 rasters) | 8 | 11 | unseeded length draws (R1): the 8 unchanged are the single-stanza groups plus red-grouper-0; the 11 changed are the gag and red grouper age stanzas |
+| `output/affinity_selratio_mice/` (5 files) | 0 | 5 | downstream of the above, plus the effort raster (R5) |
+| `output/affinity_site_mice/`, `affinity_substrate_mice/` (9 files) | 0 | 9 | downstream of stage 2 |
+| `output/affinity_selratio/` (untagged, 5 files) | 5 | 0 | stale folder, not written by current code (R4) |
+
+**Basemaps: the seagrass raster is the only source of difference.** The 45 water cells
+where the SGR layer differs are the only cells where any layer differs; in the other 3,793
+water cells all nine layers are bit-identical. In those 45 cells the reef and rock layers
+scale by exactly `(1 - SGR_new) / (1 - SGR_old)` (max deviation 7e-8), which is the sum-to-1
+normalisation. Largest absolute differences: UNC 0.080, SGR 0.080, NL 0.006, others below
+1e-3. The committed SGR mean is 0.01218; ours 0.01236. So the geodatabase read, the dbSEABED
+grids, and the whole stage 1 algorithm reproduce exactly on Holden's machine; what is
+missing is Dave's `seagrass_5min.asc` (and `seagrass_15min.asc`), which differ slightly
+from the EcospaceBasemap `Seagrass_Statewide` raster in 45 cells. **Ask of Dave:** add the
+two files (about 44 KB each) to `data/seagrass/` so the basemaps can be reproduced exactly.
+
+**New finding R5, survey effort raster.** `GFISHER_survey_effort_5min_66x78.asc` keeps the
+same station total (14,613) but 14 cells differ by one station each, in seven pairs of
+vertically adjacent cells. Seven survey stations in the domain have a latitude exactly on a
+5-minute row boundary (28.50, 30.00, 26.50, 29.75, 30.00, 26.75, 28.25 deg N); the env file
+has 11 such stations and 25 on column boundaries overall. `raster::rasterize(fun='count')`
+assigned those boundary points to the row above on Dave's machine and the row below on
+Holden's, so the assignment depends on the raster/GDAL version. Fix in Phase 3: assign
+stations with `raster::cellFromXY()` (or an explicit half-open rule) so the result is the
+same on every machine, and document the rule.
+
+A copy of the baseline outputs is kept outside the repo at
+`%LOCALAPPDATA%\Temp\gfisher_baseline\outputs_baseline_run\` with the MD5 tables
+(`baseline_md5_committed.csv`, `baseline_md5_compare.csv`) and the full log.
 
 ### 4.2 Data not in the repository
 
