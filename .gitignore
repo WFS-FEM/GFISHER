@@ -26,3 +26,4 @@ data/GFISHER_species_fg*.csv
 # author scratch
 hoard/
 prompt.md
+.Rproj.user
