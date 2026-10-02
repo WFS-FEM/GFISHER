@@ -103,7 +103,7 @@ fn.load_layer_stack <- function(dir.hab, spec=LAYER.SPEC){
 }
 
 #--- survey-effort raster: count of unique video stations per grid cell -------------------
-# (Adapted from R/estimate_habitat_affinities.R so this module runs standalone.)
+# (Adapted from the retired estimate_habitat_affinities.R, removed in Oct 2026; this module runs standalone.)
 fn.build_effort_raster <- function(file.env, depth, lon.col='lon_dd', lat.col='lat_dd',
                                    id.col='reference', save.as=NULL){
   e <- read.csv(file.env, header=TRUE, stringsAsFactors=FALSE)
