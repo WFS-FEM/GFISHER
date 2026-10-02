@@ -255,6 +255,43 @@ about 50 occupied cells borrow from their neighbour, or (c) assign each record's
 stanza fractions instead of drawing. Each gives a deterministic answer; which is appropriate
 is a modelling judgement for Dave.
 
+### 4.1d Phase 5 verification: fresh clone and an independent interactive run (2 Oct 2026)
+
+**Fresh clone, no config.** `git clone -b 2-review-gfisher-repo` into a temp folder (89 files,
+no FWRI data), then `Rscript "process GFISHER data.R"`: the root check, package check and
+config step passed; the driver tried to download the dbSEABED grids and the CSDMS server did
+not respond (finding R6); the run stopped. After the fix, a failed download is caught in about
+20 s, a one-line explanation is printed, and the input check lists `dbseabed` as MISSING with
+the fallback instruction and stops before any slow work (tested against the dead server).
+
+**Fresh clone, full run.** With a three-line `config.local.R` pointing `dir.data` straight at
+the OneDrive copy of the FWRI files (no junction, no copy), `dir.dbseabed` at the
+EcospaceBasemap grids and `file.seagrass` at the EcospaceBasemap raster, the whole pipeline
+ran under `Rscript` with exit code 0. Wall time 56 min because two other R jobs ran at the
+same time (16 min when alone).
+
+**Independent interactive run (Holden, RStudio).** Same commit, run from `GFISHER.Rproj` with
+`source()`, inputs via the `data/April2026` junction and the grids and seagrass now shipped in
+`data/`, no config overrides. All stages completed.
+
+**Result: the two runs are byte-identical in all 51 output files** (ASCII grids and CSVs,
+compared line by line), despite different invocation (Rscript vs RStudio), different input
+paths (OneDrive vs junction) and different copies of the public inputs (EcospaceBasemap vs
+shipped). The stage 1 basemaps also equal the 1 Oct baseline run exactly, and the 19 MaxN maps
+equal the seed-1 maps from the issue #5 experiment exactly.
+
+**Regenerated outputs vs the author's committed ones** (36 tracked files change):
+
+| Output | Change | Cause |
+|---|---|---|
+| 5-min basemaps, 9 layers + QC | 45 cells; SGR and UNC by up to 0.08, NL 0.006, others < 1e-3 | seagrass raster now the EcospaceBasemap one (decision 9) |
+| 15-min basemaps | unchanged | not regenerated (no 15-min seagrass) |
+| MaxN maps | 8 identical, 11 stanza maps differ | one seeded draw replaces the author's unseeded one (R1) |
+| Survey effort raster | 14 cells, same 14,613 stations, header now the exact 1/12 cell size | template (R5) |
+| 4a affinities, single-stanza groups | A changes by at most 0.002 | effort raster and seagrass cells |
+| 4a affinities, stanza groups | A changes by up to 0.69 (red grouper 1), 0.44 (gag 0), 0.45 (red grouper 3), 0.10 to 0.32 elsewhere | one draw vs another; the sparse stanzas are the sensitive ones (issue #5) |
+| 4b, 4c affinities | regenerated from the seeded stage 2 table | as above |
+
 ### 4.2 Data not in the repository
 
 Everything the pipeline reads that is **not** under `data/` in this repo, with size and where
@@ -270,8 +307,18 @@ no current code and are untracked in this PR.
 | `env3LABS_93to24.csv` | 6 MB | Stage 2, 4a, 4b, 4c | Same | Same |
 | `lens3LABS_93to24.csv` | 13 MB | Stage 2 | Same | Same |
 | `3LABS_METADATA_93to24.xlsx` | 1.6 MB | Not read by code; documents the CSVs | Same | Same (optional) |
-| dbSEABED raw grids `Gmf_{RCK,GVL,SND,MUD}/gmf_*_val.asc` (891 x 383 cells at 0.02 deg) | 8.6 MB total | Stage 1, 4c | CSDMS dbSEABED "Data for Modellers", https://csdms.colorado.edu/wiki/DBSEABED | Public download; `EcospaceBasemap` has `fn.pull_dbseabed()` that fetches the four zips. Could ship with this repo (small) |
+| dbSEABED raw grids `Gmf_{RCK,GVL,SND,MUD}/gmf_*_val.asc` (891 x 383 cells at 0.02 deg) | 4.4 MB (the four `.asc` only) | Stage 1, 4c | CSDMS dbSEABED "Data for Modellers", https://csdms.colorado.edu/wiki/DBSEABED | **Now ships with the repo** in `data/dbseabed/` (decision 6, after finding R6); provenance in `SOURCE.md`; `fn.pull_dbseabed()` kept as a fallback |
 | Seagrass raster `seagrass_<res>min.asc` on the model grid | 44 KB | Stage 1 | Derived from FWC "Seagrass Habitat in Florida" (shapefile, 329 MB), https://geodata.myfwc.com/datasets/myfwc::seagrass-habitat-in-florida ; rasterised to 5 min by `EcospaceBasemap` (`seagrass_coverage_Seagrass_Statewide_5min.asc`) | Copy from `EcospaceBasemap/output/5min/habitat/seagrass/`, or ship with this repo (small). Match to the committed SGR layer: same 212 non-zero cells, r = 0.985; exactness confirmed by the baseline run |
+
+**Finding R6 (2 Oct 2026, fresh-clone test):** the CSDMS server that hosts the dbSEABED
+zips did not respond (HTTP timeouts on both the wiki page and the zip URL), so a brand-new
+clone with no local copy cannot get the grids and stage 1 cannot run. EcospaceBasemap
+downloaded the same files successfully on 22 Sep 2026, so this is an availability problem,
+not a dead link, but it shows that an "auto-download" input is only as reproducible as the
+server. The driver now treats a failed download as a reported MISSING input rather than a
+crash. **Recommendation:** track the four raw grids in `data/dbseabed/` (8.6 MB, public,
+source documented). Shipping them removes the only network dependency and means a new user
+needs just the FWRI files. Decision for Holden / Dave.
 
 **To do (README, Phase 4):** add a "Getting the data" section with this table (ships / public
 download / request from FWRI), the expected `data/` tree, and the `config.local.R` keys that
@@ -354,19 +401,21 @@ stay backward compatible; `tools::md5sum()` for comparisons; Windows 11 / R 4.5.
 
 ## 7. Acceptance criteria
 
-- [ ] `Rscript "process GFISHER data.R"` from a fresh clone with only `config.local.R`
-      added completes without error on Holden's machine.
-- [ ] Run from the wrong folder stops with the anchor message; missing input stops before
-      stage 1 with a table naming the file and where to get it.
-- [ ] `git grep -nE "dchagaris|OneDrive"` over `*.R` matches only comments in
-      `config.local.example.R`. `git grep -n "windows("` matches nothing.
-- [ ] `output/basemaps/` has no diff after a full run (`git status --porcelain output/basemaps`
-      empty); MD5s identical.
-- [ ] Stages 2 and 3 run twice give identical MD5s for the MaxN rasters.
-- [ ] `git ls-files --cached --ignored --exclude-standard` is empty.
-- [ ] README and CLAUDE.md describe the four stages, inputs, outputs, and tested environment.
-- [ ] Dave runs the branch with his three-line `config.local.R` and reports a clean
-      `git status` on `output/basemaps/`.
+- [x] `Rscript "process GFISHER data.R"` from a fresh clone with only `config.local.R`
+      added completes without error on Holden's machine (4.1d; exit code 0).
+- [x] Run from the wrong folder stops with the anchor message; missing input stops before
+      stage 1 with a table naming the file and where to get it (4.1d; smoke tests in 4.1).
+- [x] `git grep -nE "dchagaris|OneDrive"` over `*.R` matches only comments in
+      `config.local.example.R`. `git grep -n "windows("` matches nothing. (Verified before the
+      final commits; see the PR checklist.)
+- [x] Basemaps regenerate identically given the same inputs: the fresh-clone run, Holden's
+      RStudio run and the 1 Oct baseline agree byte for byte (4.1d). They differ from the
+      author's committed files only in the 45 seagrass cells (decision 9).
+- [x] Stages 2 and 3 are deterministic: same seed gives identical MaxN rasters (4.1b), and
+      two independent runs at seed 1 are identical (4.1d).
+- [x] `git ls-files --cached --ignored --exclude-standard` is empty (housekeeping commit).
+- [x] README and CLAUDE.md describe the four stages, inputs, outputs, and tested environment.
+- [ ] Dave runs the branch with his `config.local.R` and confirms the outputs.
 
 ## 8. GitHub workflow
 
@@ -387,3 +436,16 @@ stay backward compatible; `tools::md5sum()` for comparisons; Windows 11 / R 4.5.
 4. **1 Oct 2026 (Holden):** Keep `data/April2026` as the default survey-input folder name.
 5. **1 Oct 2026 (Holden):** Basemap-code relocation to `EcospaceBasemap` is issue #3, a
    separate PR after this review.
+6. **2 Oct 2026 (Holden):** Track the four raw dbSEABED grids in `data/dbseabed/` (copied
+   byte-identical from EcospaceBasemap, provenance in `SOURCE.md`) after the CSDMS server
+   proved unreachable (R6). The duplication with EcospaceBasemap is tidied under issue #3.
+7. **2 Oct 2026 (Holden):** Tidy the mislabelled Phase 3 commits by rewriting the branch
+   history and force-pushing with a lease (own draft-PR branch, nobody else had pulled).
+8. **2 Oct 2026 (Holden):** Also untrack `data/size_at_age.csv` (unreferenced) and the stale
+   `output/affinity_selratio/` folder.
+9. **2 Oct 2026 (Holden):** Use the EcospaceBasemap seagrass raster
+   (`seagrass_coverage_Seagrass_Statewide_5min.asc`) as the seagrass input and ship it as
+   `data/seagrass/seagrass_5min.asc` with a `SOURCE.md`. The regenerated 5-min basemaps
+   therefore differ from the author's committed ones in 45 cells (SGR/UNC up to 0.08); the
+   15-min basemaps stay as committed until a 15-min seagrass raster exists. EcospaceBasemap
+   remains the producer of this layer (issue #3).

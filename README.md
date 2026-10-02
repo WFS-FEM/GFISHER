@@ -60,8 +60,8 @@ approximate.
 | `Master Species List.xlsx` (species to model-group key, size-at-age stanzas) | 220 KB | ships with the repo | `data/` |
 | `GFISHER_EAST_Universe_2026.gdb` (FWRI side-scan habitat mapping; layers `East_Master_Hab_Data_FINAL_2026`, `East_Master_Microgrid_Mapped_2026`) | 275 MB | **by request** from FWRI (Sean Keenan) or the repo author; cannot be redistributed on GitHub | `data/April2026/`, or set `dir.data` / `file.gdb` |
 | `maxn3LABS_93to24.csv`, `env3LABS_93to24.csv`, `lens3LABS_93to24.csv` (FWRI 3LABS video survey 1993 to 2024) | 42 MB | **by request**, same source | `data/April2026/`, or set `dir.data` |
-| dbSEABED raw grids `Gmf_{RCK,GVL,SND,MUD}/gmf_*_val.asc` | 9 MB | **downloaded automatically** on first run from [CSDMS dbSEABED](https://csdms.colorado.edu/wiki/DBSEABED) via `fn.pull_dbseabed()` | `data/dbseabed/`, or set `dir.dbseabed` |
-| `seagrass_<res>min.asc` (seagrass cover on the model grid, derived from [FWC Seagrass Habitat in Florida](https://geodata.myfwc.com/datasets/myfwc::seagrass-habitat-in-florida) by the `EcospaceBasemap` repo) | 44 KB | **optional**; copy from `EcospaceBasemap/output/<res>min/habitat/seagrass/` or from the author. Without it the `SGR` layer is zero and the basemaps will not match the committed ones | `data/seagrass/`, or set `file.seagrass` |
+| dbSEABED raw grids `Gmf_{RCK,GVL,SND,MUD}/gmf_*_val.asc` | 4.4 MB | ships with the repo (public data from [CSDMS dbSEABED](https://csdms.colorado.edu/wiki/DBSEABED); provenance in `data/dbseabed/SOURCE.md`). `fn.pull_dbseabed()` re-downloads them if the folder is removed | `data/dbseabed/`, or set `dir.dbseabed` to another copy |
+| `seagrass_5min.asc` (seagrass cover on the model grid, derived from [FWC Seagrass Habitat in Florida](https://geodata.myfwc.com/datasets/myfwc::seagrass-habitat-in-florida) by the `EcospaceBasemap` repo) | 44 KB | ships with the repo (provenance in `data/seagrass/SOURCE.md`); optional: without it the `SGR` layer is zero. No 15-minute version yet | `data/seagrass/`, or set `file.seagrass` |
 
 Expected `data/` tree once everything is in place:
 
@@ -70,8 +70,8 @@ data/
   bathymetry/            depth 5min 66x78.asc, depth 15min 22x26.asc, excl layer *.asc   (tracked)
   Master Species List.xlsx                                                               (tracked)
   April2026/             GFISHER_EAST_Universe_2026.gdb/, maxn/env/lens 3LABS_93to24.csv (gitignored)
-  dbseabed/              Gmf_RCK/ Gmf_GVL/ Gmf_SND/ Gmf_MUD/                              (gitignored, auto)
-  seagrass/              seagrass_5min.asc, seagrass_15min.asc                           (optional)
+  dbseabed/              Gmf_RCK/ Gmf_GVL/ Gmf_SND/ Gmf_MUD/, SOURCE.md                   (tracked)
+  seagrass/              seagrass_5min.asc, SOURCE.md                                    (tracked; 15min not yet made)
 ```
 
 If you keep the FWRI files somewhere else (a shared drive, a OneDrive sync), do not copy them:
@@ -94,7 +94,7 @@ sources it after the defaults and before reading any input.
 | `file.gdb` | `NULL` | Geodatabase path; `NULL` finds the single `GFISHER_EAST_Universe*.gdb` in `dir.data` |
 | `dir.bathy` | `data/bathymetry` | Depth grids |
 | `file.spplist` | `data/Master Species List.xlsx` | Species list |
-| `dir.dbseabed` | `data/dbseabed` | Raw dbSEABED grids; downloaded here if empty |
+| `dir.dbseabed` | `data/dbseabed` | Raw dbSEABED grids (ship with the repo); set only to use another copy |
 | `file.seagrass` | `NULL` | Seagrass raster; `NULL` = `data/seagrass/seagrass_<res>min.asc` |
 | `dir.ecospace.maps` | `NULL` | The author's external Ecospace maps tree; sets `file.seagrass` and `dir.ewemaps` the former way |
 | `dir.maps` | `output/maps` | Output root for stage 3 |
@@ -156,8 +156,10 @@ every water cell, and reef is forced to zero below 300 m. The header of
    from it. Totals per station and species are exact; the split among stanzas changes with
    the seed. With `seed = 1` the run is reproducible, but the stanza-level maps remain one
    realisation of that draw. How much this matters for the affinities is tracked in issue #5.
-2. **Seagrass.** The committed basemaps were built with the author's seagrass rasters. A
-   near-identical raster from `EcospaceBasemap` reproduces them in all but 45 of 3,838 cells.
+2. **Seagrass.** The shipped `data/seagrass/seagrass_5min.asc` comes from `EcospaceBasemap`.
+   The author's original basemaps used his own rasterisation of the same FWC layer; the two
+   agree in all but 45 of 3,838 water cells (seagrass fraction differs by up to 0.08 there).
+   The basemaps in this repo are built from the shipped file.
 3. **Stations on grid lines.** Eleven survey stations sit exactly on a 5-minute latitude line.
    Which cell they fall in depends on the template grid's header; the driver checks that all
    grids share one template so the assignment is consistent within a run.
