@@ -1,51 +1,91 @@
-rm(list=ls());rm(.SavedPlots);graphics.off();gc();windows(record=T)
+# process GFISHER data.R -- driver for the GFISHER habitat / MaxN / affinity pipeline.
+#
+# Every path below is repo-relative, so a fresh clone runs without editing this file once the
+# inputs that cannot ship (geodatabase, survey CSVs) are in place. To read them from, or write
+# outputs to, somewhere else, put a config.local.R in the repo root: it is gitignored, and
+# config.local.example.R shows what goes in it. README.md > Getting the data lists every input.
+#
+# Written to be stepped through interactively: each stage leaves its result in the workspace.
+rm(list=ls()); graphics.off(); gc()
+
+# Everything downstream is resolved from the working directory, so check it first.
+if(!file.exists('GFISHER.Rproj'))
+  stop('Set the working directory to the repo root - open GFISHER.Rproj, or setwd() there. ',
+       'Currently: ', getwd())
+
+source(file.path('R','_setup.R'))             # package check, plot device, input manifest
+fn.check_packages()                           # stops with an install.packages() line if any is missing
+fn.plot_device()                              # recording plot window when interactive on Windows
+
 # Map-building code is split by stage. The former 'R/GFISHER functions.R' was divided into
 # video_dataset.R / maxn_maps.R, with its cell-area habitat maps retired to R/legacy/.
+# Every call in these files is namespaced (raster::, sf::), so nothing needs terra attached;
+# the depth template is read with raster::raster() below. (terra is only used by R/legacy/.)
 source(file.path('R','video_dataset.R'))      # STAGE 2: station x group MaxN table
 source(file.path('R','maxn_maps.R'))          # STAGE 3: per-group MaxN heatmaps
 source(file.path('R','habitat_basemaps.R'))   # STAGE 1: sum-to-1 habitat basemaps
-library('terra')
 
-#=========================== USER INPUTS ============================================================
-#setup----------------------------------------------------------------------------------------------
-# Set the working directory to the GFISHER repo root before running this script (setwd("path/to/GFISHER")).
-# All other paths below resolve relative to it.
-dir.gfisher <- getwd()
-dir.maps <- file.path(dir.gfisher,'output','maps')
+#=========================== SETTINGS (repo-relative defaults) ======================================
+# Change these in config.local.R, not here. The config is sourced right after this block.
+dir.gfisher  <- getwd()
+res          <- 5          # map resolution in arc-minutes; 5 and 15 ship in data/bathymetry/
+group.scheme <- 'mice'     # species grouping scheme; see the SPECIES GROUPING SCHEME block
+
+# Inputs that cannot ship with the repo (too large / FWRI data): the GFISHER East Universe
+# geodatabase and the three 3LABS survey CSVs. dir.data is the folder that holds them.
+dir.data     <- file.path(dir.gfisher,'data','April2026')
+file.gdb     <- NULL       # NULL finds the single GFISHER_EAST_Universe*.gdb inside dir.data
+
+# Inputs that ship with the repo.
+dir.bathy    <- file.path(dir.gfisher,'data','bathymetry')
+file.spplist <- file.path(dir.gfisher,'data','Master Species List.xlsx')
+
+# RAW dbSEABED grids (Gmf_<CLS>/gmf_<CLS>_val.asc at their native 1.2 arc-min), read by stages 1
+# and 4c. NOT the processed 5-min gmf_*_prop_*.asc layers, which renormalize rock against the
+# grain-size triangle and convert the -99 NODATA flag to zero. Downloaded from CSDMS on first
+# run if the default folder is empty.
+dir.dbseabed <- file.path(dir.gfisher,'data','dbseabed')
+
+# Seagrass raster on the model grid, used by stage 1 (optional: without it SGR = 0).
+# NULL resolves to data/seagrass/seagrass_<res>min.asc, or to the author's Ecospace maps tree
+# when dir.ecospace.maps is set.
+file.seagrass     <- NULL
+dir.ecospace.maps <- NULL  # the author's external Ecospace maps tree; sets file.seagrass + dir.ewemaps
+
+# Where outputs go. dir.ewemaps holds the stage 3 MaxN heatmaps (NULL = dir.maps).
+dir.maps     <- file.path(dir.gfisher,'output','maps')
+dir.ewemaps  <- NULL
+
+#--------------------------- local overrides --------------------------------------------------------
+if(file.exists('config.local.R')){
+  source('config.local.R')
+  message('Applied local overrides from config.local.R')
+}
+
+#--------------------------- resolve derived paths and check inputs ---------------------------------
+if(is.null(file.gdb))      file.gdb <- fn.find_gdb(dir.data)
+if(is.null(file.seagrass)) file.seagrass <- if(!is.null(dir.ecospace.maps))
+  file.path(dir.ecospace.maps,'input_ascii_sum1',paste0(res,'min'),paste0('seagrass_',res,'min.asc')) else
+  file.path(dir.gfisher,'data','seagrass',paste0('seagrass_',res,'min.asc'))
+if(is.null(dir.ewemaps))   dir.ewemaps <- if(!is.null(dir.ecospace.maps)) dir.ecospace.maps else dir.maps
+file.maxn  <- file.path(dir.data,'maxn3LABS_93to24.csv')
+file.env   <- file.path(dir.data,'env3LABS_93to24.csv')
+file.len   <- file.path(dir.data,'lens3LABS_93to24.csv')
+file.depth <- list.files(dir.bathy, pattern=paste0('^depth ',res,'min.*\\.asc$'), full.names=TRUE)
+if(length(file.depth)!=1) stop("Expected one 'depth ",res,"min*.asc' raster in ",dir.bathy,
+                               ", found ",length(file.depth))
+
+# Public dbSEABED grids download themselves into the default folder only; a custom
+# dir.dbseabed that is missing is reported by fn.check_inputs instead.
+if(dir.dbseabed == file.path(dir.gfisher,'data','dbseabed') &&
+   !all(file.exists(fn.dbseabed_files(dir.dbseabed)))) fn.pull_dbseabed(dir.dbseabed)
+
+inputs <- fn.check_inputs(fn.data_manifest(dir.data, file.gdb, file.spplist, file.depth,
+                                           dir.dbseabed, file.seagrass, res))
+
 if(!dir.exists(dir.maps)) dir.create(dir.maps, recursive=TRUE, showWarnings=FALSE)
-
-# dir.ewemaps: where the MaxN heatmap outputs are written. Defaults to the in-repo output/maps/ so
-# the script runs out of the box. To write them into an external Ecospace maps tree instead, set
-# dir.ewemaps.ext to its path; it is used only when it exists, otherwise the in-repo output/maps/ is used.
-dir.ewemaps <- dir.maps
-dir.ewemaps.ext <- ""   # e.g. "C:/Users/<you>/OneDrive .../WFS EwE/Ecospace/maps"
-if(nzchar(dir.ewemaps.ext) && dir.exists(dir.ewemaps.ext)) dir.ewemaps <- dir.ewemaps.ext
-
-# dir.ecospace.maps: external Ecospace maps tree that holds the 10 habitat/sediment layers the
-# habitat-affinity step reads (input_ascii_sum1/). Read-only; not produced by this repo.
-dir.ecospace.maps <- "C:/Users/dchagaris/OneDrive - University of Florida/WFS Fisheries Ecosystem Modeling/WFS EwE/Ecospace/maps"
-
-# file.gdb: ABSOLUTE path to your local copy of the GFISHER East Universe geodatabase.
-# This file is NOT shipped with the repo (too large). Users running this code are expected to
-# have their own copy of GFISHER_EAST_Universe_2026.gdb (or equivalent) and to point this at it.
-dir.data <- file.path(dir.gfisher,'data','April2026')
-dir.scripts <- file.path(dir.gfisher,'R')
-file.gdb <- file.path(dir.data,"GFISHER_EAST_Universe_2026.gdb")
-file.spplist <- file.path(dirname(dir.data),"Master Species List.xlsx")
-file.sizeatage <- file.path(dirname(dir.data),'size_at_age.csv')
-file.maxn = file.path(dir.data,'maxn3LABS_93to24.csv')
-file.env = file.path(dir.data,'env3LABS_93to24.csv')
-file.len = file.path(dir.data,'lens3LABS_93to24.csv')
-dir.bathy <- file.path(dir.gfisher,'data','bathymetry')
-dir.bathy.ext <- ""   # e.g. "C:/Users/<you>/OneDrive .../WFS EwE/Ecospace/maps/bathymetry"
-if(nzchar(dir.bathy.ext) && dir.exists(dir.bathy.ext)) dir.bathy <- dir.bathy.ext
-
-# res: map resolution in arc-minutes. 5 and 15 ship with the repo (see data/bathymetry/).
-res <- 5
-file.depth <- list.files(dir.bathy,pattern=paste0('depth ',res,'min'),full.names=TRUE)
-if(length(file.depth)==0) stop(paste0("No 'depth ",res,"min' raster found in ",dir.bathy))
-depth <- rast(file.depth)
-plot(depth)
+depth <- raster::raster(file.depth)
+if(interactive()) raster::plot(depth)
 
 ##geographic domain----
 region <- 'WFS'
@@ -58,7 +98,7 @@ if(region=='WFS') bbox <- c(latN=30.5, latS=25, lonW=-87.5, lonE=-81)
 # a new scheme by adding a row to group.schemes (spplist group cols + matching spp_stanzas_sizes fg col).
 #   'ecospace' -> full Ecospace groups (modnum / modname / fg)
 #   'mice'     -> MICE model groups    (modnum_mice / modname_mice / fg_mice)
-group.scheme <- 'mice'
+# group.scheme itself is set in the SETTINGS block above (overridable in config.local.R).
 group.schemes <- list(
   ecospace = c(modnum='modnum',      modname='modname',      fg='fg'),
   mice     = c(modnum='modnum_mice', modname='modname_mice', fg='fg_mice'))
@@ -71,13 +111,7 @@ group.cols <- group.schemes[[group.scheme]]
 # unconsolidated bottom from raw dbSeabed, and seagrass. See the header of R/habitat_basemaps.R
 # for what this changed relative to the retired cell-area maps (now in R/legacy/).
 #
-# dir.dbseabed: RAW dbSeabed grids at their native 1.2 arc-min, i.e. the Gmf_<CLS>/ folders
-# written by fn.pull_dbseabed in the EnvironmentalDrivers2EwE repo. NOT the processed 5-min
-# gmf_*_prop_*.asc layers, which renormalize rock against the grain-size triangle and convert
-# the -99 NODATA flag to zero.
-dir.dbseabed <- "C:/dchagaris/GitHub/WFS-FEM/EnvironmentalDrivers2EwE/data/dbSEABED"
-file.seagrass <- file.path(dir.ecospace.maps,'input_ascii_sum1',paste0(res,'min'),
-                           paste0('seagrass_',res,'min.asc'))
+# dir.dbseabed and file.seagrass are set in the SETTINGS block above (overridable in config.local.R).
 dir.basemaps <- file.path(dir.gfisher,'output','basemaps',paste0(res,'min'))
 basemaps <- fn.make_habitat_basemaps(depth=depth, file.gdb=file.gdb, dir.raw=dir.dbseabed,
               dir.out=dir.basemaps,
@@ -101,8 +135,7 @@ maxn <- fn.make_gfisher_videodataset(file.maxn, file.env, file.len, bbox, file.s
 
 #STAGE 3 -- FISH MAXN HEATMAPS----------------------------------------------------------------------
 # Outputs are scheme-tagged (.../maxn/<scheme>/) so different groupings coexist without clobbering.
-class(maxn)
-graphics.off();rm(.SavedPlots);windows(record=T)
+graphics.off(); fn.plot_device()
 dir.maxn <- file.path(dir.ewemaps,'GFISHER',paste0(res,'min'),'maxn',group.scheme)
 maxn.stack <- fn.make_GFISHER_maxn_maps(maxn, depth, plot=T, fun=mean, background=0,
                                         dir.out=dir.maxn,

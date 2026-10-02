@@ -27,3 +27,12 @@ data/GFISHER_species_fg*.csv
 hoard/
 prompt.md
 .Rproj.user
+
+# machine-specific path overrides (copy config.local.example.R to create one)
+config.local.R
+
+# written by a non-interactive Rscript run if any plot() escapes the interactive() guard
+Rplots.pdf
+
+# public dbSEABED grids, downloaded by fn.pull_dbseabed() on first run (about 9 MB)
+data/dbseabed/
