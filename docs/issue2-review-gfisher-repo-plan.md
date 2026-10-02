@@ -156,6 +156,43 @@ A copy of the baseline outputs is kept outside the repo at
 `%LOCALAPPDATA%\Temp\gfisher_baseline\outputs_baseline_run\` with the MD5 tables
 (`baseline_md5_committed.csv`, `baseline_md5_compare.csv`) and the full log.
 
+### 4.1b Stochasticity check: is the seed the only thing moving the stanza maps?
+
+Asked by Holden on 2 Oct 2026 after the portability run reproduced the 8 single-stanza MaxN
+maps exactly but not the 11 gag / red grouper age-stanza maps. Stages 2 and 3 were rerun on
+their own (no geodatabase needed) three times: seed 1, seed 1 again, and seed 2.
+
+| Test | Result |
+|---|---|
+| Same seed twice | Stage 2 tables `identical()`; all 19 rasters byte-identical |
+| Grand total MaxN, seed 1 vs seed 2 | 1,043,543 in both |
+| Per-species total MaxN | identical for every species |
+| Per-station x species total MaxN (60,374 rows) | 0 rows differ |
+| Union of occupied cells per species | gag 458 cells, red grouper 747 cells, identical sets |
+| 7 single-stanza maps | identical across seeds |
+| Rows with a missing group number | 17,215 rows (MaxN 139,311) across 160 taxa, identical across seeds; these are taxa outside the model groups (e.g. `baitfish unk`, `pagrus pagrus`), not multistanza fish. No gag or red grouper record lacks a group |
+| Function's own "counts did not sum back" check | silent for both seeds |
+
+So the seed changes exactly one thing: which age stanza each individual gag or red grouper is
+assigned to, through the random length draw (`rtruncnorm`) or the random pairing of observed
+lengths with individuals (`sample.int`). Nothing is gained or lost.
+
+**The per-cell differences are not small, and that is inherent to the method, not a bug.**
+Cell values are the mean MaxN per record, so moving one fish between stanzas changes a
+sparse cell by about 1. Seed 1 vs seed 2 gives, per stanza map, 13 to 229 cells changed,
+mean |difference| 0.3 to 1.0, max 1 to 4, and correlations from 0.14 (red grouper 1, 10
+occupied cells) to 0.98 (red grouper 5+, 695 cells). Dave's committed maps vs our baseline
+run show the same pattern (e.g. gag 1: 114 cells, mean 0.97, r = 0.79), confirming they are
+two draws from the same process. Red grouper 0 is identical across all runs: its assignment
+does not depend on the draw.
+
+Implication for the fix: `set.seed()` makes the stanza maps reproducible but does not make
+them less noisy. A single draw is one realisation of the stanza split. If the stanza maps
+matter downstream (they feed stage 4), a deterministic alternative is to average the maps
+over many seeds (the expected stanza composition) or to assign the expected fraction of each
+record to each stanza instead of drawing. **This is a methods decision for Dave, tracked in issue #5 (seed-sensitivity experiment
+across 10 seeds, compared with the bootstrap intervals); not changed in this PR.**
+
 ### 4.2 Data not in the repository
 
 Everything the pipeline reads that is **not** under `data/` in this repo, with size and where
