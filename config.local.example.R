@@ -43,8 +43,9 @@
 
 
 # RAW dbSEABED grids (Gmf_<CLS>/gmf_<CLS>_val.asc for RCK, GVL, SND, MUD) used by stages 1
-# and 4c. If the default folder is empty the driver downloads them from CSDMS (8.6 MB) with
-# fn.pull_dbseabed(). Point this at an existing copy to skip the download.
+# and 4c. They ship with the repo (data/dbseabed/, 4.4 MB, provenance in SOURCE.md); override
+# only to use another copy. If the default folder is ever emptied the driver tries to
+# re-download them from CSDMS with fn.pull_dbseabed().
 # Default: file.path(dir.gfisher, 'data', 'dbseabed')
 # dir.dbseabed <- 'C:/Repos/WFS-FEM/EcospaceBasemap/data/dbseabed'                      # a sibling repo
 # dir.dbseabed <- 'C:/dchagaris/GitHub/WFS-FEM/EnvironmentalDrivers2EwE/data/dbSEABED'  # the author's layout

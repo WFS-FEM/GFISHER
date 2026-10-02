@@ -41,9 +41,9 @@ Requires R 4.x with `sf`, `sp`, `raster`, `FNN`, `colorRamps`, `reshape2`, `trun
 ## Inputs, outputs, and what's gitignored
 
 - **Cannot ship (gitignored, by request from FWRI):** `data/April2026/` with `GFISHER_EAST_Universe_2026.gdb` (275 MB) and the three `*3LABS_93to24.csv` survey files (42 MB). Location set by `dir.data`; the geodatabase is found by `fn.find_gdb()`.
-- **Public, auto-downloaded (gitignored):** `data/dbseabed/` via `fn.pull_dbseabed()`.
+- **Public, tracked:** `data/dbseabed/` (4.4 MB, four raw dbSEABED grids; provenance in its `SOURCE.md`). `fn.pull_dbseabed()` re-downloads them only if the folder is removed; the CSDMS server was down during the Oct 2026 review, which is why they ship.
 - **Ships with the repo:** `data/bathymetry/` depth grids (`depth <res>min <rows>x<cols>.asc`) and `data/Master Species List.xlsx`.
-- **Optional:** `data/seagrass/seagrass_<res>min.asc`.
+- **Tracked, optional at run time:** `data/seagrass/seagrass_5min.asc` (44 KB, from EcospaceBasemap; provenance in its `SOURCE.md`). Without a seagrass raster `SGR = 0`. There is no 15-min version yet.
 - **Tracked outputs (deliverables):** `output/basemaps/<res>min/` (the nine layers, QC table, panel figure), `output/maps/GFISHER/<res>min/maxn/<scheme>/`, `output/affinity_*_<scheme>/`. Stage 1 overwrites `output/basemaps/` in place so a rebuild shows in `git diff`.
 - **Gitignored outputs:** `output/maps/<res>min/` (legacy maps only), `output/GFISHER_species_fg*.csv`, `Rplots.pdf`, `config.local.R`.
 - Two legacy geodatabases (`East_Master_Hab_data_Dissolve_byMicro_13Sept24.gdb`, `FWRI_East_Gulf_Mapping_2023.gdb`) were untracked in October 2026 and remain only in git history; no current code reads them.

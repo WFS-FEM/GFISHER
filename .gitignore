@@ -13,8 +13,7 @@ config.local.R
 data/April2026/
 data/*.gdb/
 data/**/*.gdb/
-# public dbSEABED grids, downloaded by fn.pull_dbseabed() on first run (about 9 MB)
-data/dbseabed/
+# data/dbseabed/ is TRACKED (4.4 MB of public grids; see data/dbseabed/SOURCE.md)
 # survey-taxon -> model-group key written by stage 2 (historical location beside the inputs)
 data/GFISHER_species_fg*.csv
 # raw video-count workbook superseded by the 3LABS CSVs; untracked Oct 2026, may still sit in local clones

@@ -31,7 +31,7 @@ fn.check_packages <- function(pkgs = GFISHER.PACKAGES, optional = GFISHER.PACKAG
 
 # Plot device ------------------------------------------------------------------------
 #' Open a recording graphics window when that makes sense, and do nothing otherwise.
-#' Replaces `rm(.SavedPlots); windows(record=T)`, which fails under Rscript and on
+#' Replaces the old Windows-only recording-device call, which failed under Rscript and on
 #' non-Windows systems and warns when .SavedPlots does not exist.
 fn.plot_device <- function(){
   if(interactive() && .Platform$OS.type == 'windows'){
@@ -109,12 +109,12 @@ fn.data_manifest <- function(dir.data, file.gdb, file.spplist, file.depth, dir.d
     data.frame(key = 'survey_lens', stage = '2', required = TRUE, how = 'manual',
                path = file.path(dir.data, 'lens3LABS_93to24.csv'),
                source = 'FWRI 3LABS length file, ~13 MB. Same source.'),
-    data.frame(key = 'dbseabed', stage = '1,4c', required = TRUE, how = 'auto',
+    data.frame(key = 'dbseabed', stage = '1,4c', required = TRUE, how = 'repo',
                path = dir.dbseabed,
-               source = 'CSDMS dbSEABED raw grids, ~9 MB: fn.pull_dbseabed(dir.dbseabed), or point dir.dbseabed at an existing copy (e.g. EcospaceBasemap/data/dbseabed).'),
-    data.frame(key = 'seagrass', stage = '1', required = FALSE, how = 'derived',
+               source = 'CSDMS dbSEABED raw grids (ship with the repo in data/dbseabed/, see its SOURCE.md). If removed: fn.pull_dbseabed(dir.dbseabed), or point dir.dbseabed at another copy (e.g. EcospaceBasemap/data/dbseabed).'),
+    data.frame(key = 'seagrass', stage = '1', required = FALSE, how = 'repo',
                path = file.seagrass,
-               source = paste0('Seagrass raster on the ', res, '-min grid (~44 KB), derived from FWC Seagrass Habitat in Florida by EcospaceBasemap. Without it SGR = 0 and the basemaps will not match the committed ones.')),
+               source = paste0('Seagrass raster on the ', res, '-min grid (~44 KB). The 5-min one ships in data/seagrass/ (from EcospaceBasemap; see its SOURCE.md); other resolutions must be made there. Without it SGR = 0.')),
     stringsAsFactors = FALSE)
 }
 
