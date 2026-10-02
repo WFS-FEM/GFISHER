@@ -79,6 +79,10 @@ fn.make_GFISHER_maxn_maps <- function(maxn, depth, lon.col='lon_dd', lat.col='la
   dims    <- paste0(dim(maxn.stack)[1],'x',dim(maxn.stack)[2])
 
   #save---------------------------------------------------------------------------
+  # Only ESRI ASCII is written (the Ecospace input format). save.format stays in the signature for
+  # backward compatibility; anything else was never implemented, so say so rather than ignore it.
+  if(!identical(save.format, 'ascii'))
+    message("save.format='", save.format, "' requested but only 'ascii' is implemented; writing .asc")
   if(!is.null(dir.out)){
     if(!dir.exists(dir.out)) dir.create(dir.out, recursive=TRUE)
     # one .asc per group; encode modnumber + sanitized modname in the filename since ascii drops names

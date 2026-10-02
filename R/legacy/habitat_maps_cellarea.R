@@ -31,8 +31,12 @@ fn.make_GFISHER_habitat_maps <- function(file.gdb, dir.maps, depth=depth){
   
   #extract shapefile from gdb
   cat("Reading Geodatabase Files...\n")
-  microgrid <- st_read(file.gdb, layer=lyrs.gdb$name[grep("Microgrid",lyrs.gdb$name)])   
-  habitat <- st_read(file.gdb, layer=lyrs.gdb$name[grep("Dissolve",lyrs.gdb$name)])
+  l.mg <- lyrs.gdb$name[grep("Microgrid",lyrs.gdb$name)]
+  l.hb <- lyrs.gdb$name[grep("Dissolve",lyrs.gdb$name)]
+  if(length(l.mg)!=1) stop("could not find a unique Microgrid layer in ", file.gdb)
+  if(length(l.hb)!=1) stop("could not find a unique Dissolve layer in ", file.gdb)
+  microgrid <- st_read(file.gdb, layer=l.mg)
+  habitat <- st_read(file.gdb, layer=l.hb)
   habitat <- habitat[habitat$NewHabStrat!='AP',]
   #habitat <- st_make_valid(habitat)
   
@@ -238,7 +242,7 @@ fn.make_GFISHER_habitat_maps <- function(file.gdb, dir.maps, depth=depth){
   
   #output-------------------------------------------------------------------------
   dir.out = file.path(dir.maps,paste0(res.min,"min"))
-  if(!dir.exists(dir.out)) dir.create(dir.out)
+  if(!dir.exists(dir.out)) dir.create(dir.out, recursive=TRUE)
   writeRaster(habpct.stack,filename=paste0(dir.out,"/GFISHER"),bylayer=T,format='ascii', overwrite=T,
               suffix=paste0(names(habpct.stack),"_prop_",res.min,"min_",dim(habpct.stack)[1],"x",dim(habpct.stack)[2]))
   writeRaster(microgrid.ras,filename=paste0(dir.out,"/GFISHER_microgrid_",res.min,"min_",dim(microgrid.ras)[1],"x",dim(microgrid.ras)[2],".asc"), overwrite=T)
@@ -460,7 +464,7 @@ names(habpct.stack) <- newhabs
 
 #output-------------------------------------------------------------------------
 dir.out = file.path(dir.maps,paste0(res.min,"min"))
-if(!dir.exists(dir.out)) dir.create(dir.out)
+if(!dir.exists(dir.out)) dir.create(dir.out, recursive=TRUE)
 writeRaster(habpct.stack,filename=paste0(dir.out,"/GFISHER"),bylayer=T,format='ascii', overwrite=T,
             suffix=paste0(names(habpct.stack),"_prop_",res.min,"min_",dim(habpct.stack)[1],"x",dim(habpct.stack)[2]))
 writeRaster(microgrid.ras,filename=paste0(dir.out,"/GFISHER_microgrid_",res.min,"min_",dim(microgrid.ras)[1],"x",dim(microgrid.ras)[2],".asc"), overwrite=T)

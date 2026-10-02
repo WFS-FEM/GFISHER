@@ -132,15 +132,15 @@ fn.plot_habitat_basemaps(dir.basemaps)
 maxn <- fn.make_gfisher_videodataset(file.maxn, file.env, file.len, bbox, file.spplist,
                                      col.modnum=group.cols[['modnum']],
                                      col.modname=group.cols[['modname']],
-                                     col.fg=group.cols[['fg']], seed=seed)
+                                     col.fg=group.cols[['fg']], seed=seed,
+                                     file.lookup=file.path(dir.gfisher,'output',paste0('GFISHER_species_fg_',group.scheme,'.csv')))
 
 #STAGE 3 -- FISH MAXN HEATMAPS----------------------------------------------------------------------
 # Outputs are scheme-tagged (.../maxn/<scheme>/) so different groupings coexist without clobbering.
 graphics.off(); fn.plot_device()
 dir.maxn <- file.path(dir.ewemaps,'GFISHER',paste0(res,'min'),'maxn',group.scheme)
-maxn.stack <- fn.make_GFISHER_maxn_maps(maxn, depth, plot=T, fun=mean, background=0,
-                                        dir.out=dir.maxn,
-                                        save.format='all')        # one layer per model group
+maxn.stack <- fn.make_GFISHER_maxn_maps(maxn, depth, plot=TRUE, fun=mean, background=0,
+                                        dir.out=dir.maxn)         # one .asc layer per model group
 
 #STAGE 4a -- HABITAT AFFINITIES FROM SELECTION RATIOS (raster route)---------------------------------
 # Sourcing only defines the functions (its own driver block is guarded), so we call the batch
@@ -163,6 +163,7 @@ if(!dir.exists(dir.aff)) dir.create(dir.aff, recursive=TRUE)
 # dbSeabed at native resolution where that contrast actually exists.
 affinity.constraints <- list(apply=FALSE)
 hab <- fn.load_layer_stack(dir.hab)           # spec defaults to BASEMAP.SPEC
+raster::compareRaster(hab, depth)             # effort and MaxN maps must share one grid (plan doc R5)
 eff <- fn.build_effort_raster(file.env, hab[[1]],
          save.as=file.path(dir.aff, paste0('GFISHER_survey_effort_',res,'min_',nrow(hab),'x',ncol(hab),'.asc')))
 aff <- fn.batch_selection_ratios(hab, dir.emp=dir.maxn, dir.out=dir.aff, effort=eff, n.boot=1000,
