@@ -16,11 +16,16 @@ suppressPackageStartupMessages({
 
 fn.make_gfisher_videodataset <- function(file.maxn, file.env, file.len, bbox, file.spplist,
                                          col.modnum='modnum', col.modname='modname', col.fg='fg',
-                                         seed=1){
+                                         seed=1,
+                                         file.lookup=file.path(dirname(dirname(file.maxn)),
+                                                               paste0('GFISHER_species_fg_',col.modnum,'.csv'))){
   # seed: the multistanza step draws lengths (rtruncnorm) and pairs observed lengths with
   # individuals (sample.int), so stanza assignment is random. A fixed seed makes stages 2-4
   # reproducible run to run; NULL restores the unseeded behaviour. The draw moves individuals
   # between stanzas of a species only; totals per station and species are unaffected.
+  # file.lookup: where the survey-taxon -> model-group key is written (NULL = not written). The
+  # default keeps the historical location (the parent of the survey-data folder); the driver
+  # points it at output/ instead so nothing is written next to the inputs.
   if(!is.null(seed)) set.seed(seed)
   # Species groupings are set by the caller, not hardcoded, via the three column arguments:
   #   col.modnum / col.modname : which spplist-sheet columns give the model-group number and name
@@ -50,11 +55,6 @@ fn.make_gfisher_videodataset <- function(file.maxn, file.env, file.len, bbox, fi
   keep.env = which(dat.env$lat_dd>=bbox[2] & dat.env$lat_dd<=bbox[1] &
                    dat.env$lon_dd>=bbox[3] & dat.env$lon_dd<=bbox[4])
   dat.env2 = unique(dat.env[keep.env,])
-  names(dat.env2)
-  length(unique(dat.env$reference))
-  length(unique(dat.env2$reference))
-  nrow(dat.env2)
-  sum(duplicated(dat.env2$reference))
 
   #build one station record per reference (coordinates + env), preferring complete rows.
   #NOTE: keep the 'dup'/'complete' helper columns - they are dropped by name in the merge below.
@@ -94,7 +94,6 @@ fn.make_gfisher_videodataset <- function(file.maxn, file.env, file.len, bbox, fi
   
   #keep species included in the model
   keeptaxa = tolower(sort(unique(spplist$taxon)))
-  names(dat.maxn)
   spp.gfsh = data.frame(taxon=sort(unique(names(dat.maxn)[-c(1:2)])),
                         taxon2 = sub("_sp$","",sort(unique(names(dat.maxn)[-c(1:2)]))),
                         taxon3 = sapply(strsplit(sort(unique(names(dat.maxn)[-c(1:2)])), "_"), `[`, 1))
@@ -109,7 +108,10 @@ fn.make_gfisher_videodataset <- function(file.maxn, file.env, file.len, bbox, fi
                               ifelse(spp.gfsh$taxon %in% c('epinephelus_sp','epinephelus_striatus'), as.character(cw$scheme[match(36, cw$orig)]),spp.gfsh$modnumber))
   spp.gfsh$modname = modgrps$modname[match(spp.gfsh$modnumber, modgrps$modnumber)]
 
-  write.csv(spp.gfsh,file.path(dirname(dirname(file.maxn)),paste0('GFISHER_species_fg_',col.modnum,'.csv')),row.names=F)
+  if(!is.null(file.lookup)){
+    if(!dir.exists(dirname(file.lookup))) dir.create(dirname(file.lookup), recursive=TRUE)
+    write.csv(spp.gfsh, file.lookup, row.names=FALSE)
+  }
   
   #melt video data----------------------------------------------------------------------------------
   dat.maxn.long <- melt(dat.maxn[,-1],id.vars='reference', variable.name='sciname', value.name='maxn')
@@ -135,17 +137,17 @@ fn.make_gfisher_videodataset <- function(file.maxn, file.env, file.len, bbox, fi
   lf.spp.max <- aggregate(length_mm~sciname, lf2, max)
   lf.spp.cnt <- aggregate(length_mm~sciname, lf2, length)
   lf.spp.sd$length_mm[is.na(lf.spp.sd$length_mm)] <- lf.spp.mean$length_mm[is.na(lf.spp.sd$length_mm)]* mean(lf.spp.sd[,2]/lf.spp.mean[,2],na.rm=T)
-  
-  names(lf2)
-  names(dat.maxn.long)
-  
+
   lf3 <- merge(lf2, dat.maxn.long)
-  
+
   dat3 <- dat.maxn.long[,c('reference','sciname','maxn')]
   dat3$sciname <- gsub("_"," ",dat3$sciname)
-  sort(unique(dat3$sciname))
   dat3 <- dat3[dat3$sciname %in% multistanza.spp,]
-  
+  # every multistanza species with MaxN records needs length records to draw from
+  no.len <- setdiff(unique(dat3$sciname), lf.spp.mean$sciname)
+  if(length(no.len)) stop('multistanza species with MaxN records but no length records: ',
+                          paste(no.len, collapse=', '))
+
   dat4 <- data.frame()
   for(i in 1:nrow(dat3)){
     #i=1
@@ -192,10 +194,13 @@ fn.make_gfisher_videodataset <- function(file.maxn, file.env, file.len, bbox, fi
     laa.i = as.numeric(unlist(sizeatage[which(tolower(sizeatage$sciname)==spp.i)[1],which(substr(names(sizeatage),1,3)=='age')]))
     stanzas.i = as.numeric(unlist(strsplit(sizeatage$stanzas[tolower(sizeatage$sciname)==spp.i],"-")))
     groups.i = as.numeric(unlist(strsplit(sizeatage[[col.fg]][tolower(sizeatage$sciname)==spp.i],"-")))
-    names(dat4)
     size.i = dat4$len_mm[i]/10
     age.i = which.min(abs(laa.i-size.i))-1
     stz.i = tail(which(age.i-stanzas.i>=0),1)
+    # an age below the first stanza boundary would otherwise give a zero-length index and the
+    # cryptic 'replacement has length zero'; fail with the facts instead
+    if(length(stz.i)==0) stop(sprintf('%s: length %d mm -> age %d is below the first stanza (%s)',
+                                      spp.i, dat4$len_mm[i], age.i, sizeatage$stanzas[tolower(sizeatage$sciname)==spp.i][1]))
     grp.i = groups.i[stz.i]
     grpname.i = modgrps$modname[match(grp.i, modgrps$modnumber)]
     
@@ -203,7 +208,6 @@ fn.make_gfisher_videodataset <- function(file.maxn, file.env, file.len, bbox, fi
     dat4$modname[i] <- grpname.i
     
   }
-  names(dat4)
   dat4$n_at_length = 1
   dat4 <- aggregate(n_at_length~reference+sciname+modnumber+modname, data=dat4, sum)
   dat4$maxn <- dat4$n_at_length
@@ -212,19 +216,16 @@ fn.make_gfisher_videodataset <- function(file.maxn, file.env, file.len, bbox, fi
   #--------------------------assign NON-multistanza species to fg -------------------------------------
   #resume here...
   dat5 <-  dat.maxn.long[!dat.maxn.long$sciname %in% multistanza.spp,c('reference','sciname','maxn')]
-  names(dat5)
-  names(spp.gfsh)
   spp.key <- spp.gfsh[,c('taxon','modnumber','modname')]
   spp.key$taxon <- gsub("_"," ", spp.key$taxon)          # match dat5$sciname format (spaces, not underscores)
   dat5 <- merge(dat5, spp.key, by.x='sciname',by.y='taxon', all.x=T)
   
   
   #put it back together
-  names(dat4)
-  names(dat5)
   dat.full <- rbind(dat4, dat5)
-  
-  #check counts
+
+  #check counts: every raw MaxN must be accounted for after the stanza split and group assignment.
+  #A mismatch means records were lost, so stop rather than print a message that scrolls past.
   sum1 <- aggregate(maxn~sciname, data=dat.full, sum)
   names(sum1)[2] <- 'final_maxn'
   sum2 <- aggregate(maxn~sciname, data=dat.maxn.long, sum)
@@ -232,11 +233,11 @@ fn.make_gfisher_videodataset <- function(file.maxn, file.env, file.len, bbox, fi
   chk <- merge(sum1,sum2)
   err <- which(chk$final_maxn != chk$raw_maxn)
   if(length(err)>0){
-    message('MaxN counts did not sum back up after processing')
+    stop('MaxN counts did not sum back up after processing for: ',
+         paste(sprintf('%s (%d raw -> %d final)', chk$sciname[err], chk$raw_maxn[err], chk$final_maxn[err]), collapse='; '))
   }
-  
+
   #merge back with env data
-  which(duplicated(stations$reference))
   dat.full <- merge(dat.full, stations[,-which(names(stations) %in% c('dup','complete'))], all.x=T, by='reference')
   return(dat.full)
 } #eof
