@@ -11,11 +11,17 @@
 # R/site_level_affinities.R.
 
 suppressPackageStartupMessages({
-  library('sp'); library('raster'); library('xlsx'); library('reshape2'); library('truncnorm')
+  library('sp'); library('raster'); library('reshape2'); library('truncnorm')   # readxl is called by namespace
 })
 
 fn.make_gfisher_videodataset <- function(file.maxn, file.env, file.len, bbox, file.spplist,
-                                         col.modnum='modnum', col.modname='modname', col.fg='fg'){
+                                         col.modnum='modnum', col.modname='modname', col.fg='fg',
+                                         seed=1){
+  # seed: the multistanza step draws lengths (rtruncnorm) and pairs observed lengths with
+  # individuals (sample.int), so stanza assignment is random. A fixed seed makes stages 2-4
+  # reproducible run to run; NULL restores the unseeded behaviour. The draw moves individuals
+  # between stanzas of a species only; totals per station and species are unaffected.
+  if(!is.null(seed)) set.seed(seed)
   # Species groupings are set by the caller, not hardcoded, via the three column arguments:
   #   col.modnum / col.modname : which spplist-sheet columns give the model-group number and name
   #   col.fg                   : which spp_stanzas_sizes column maps age stanzas to group numbers
@@ -23,13 +29,10 @@ fn.make_gfisher_videodataset <- function(file.maxn, file.env, file.len, bbox, fi
   # by passing modnum_mice/modname_mice/fg_mice. See process GFISHER data.R for the driver knob.
   
   #fxn arguments/inputs
-  # file.gfsh = "C:\\Users\\dchagaris\\Github\\WFS-FEM\\GFISHER\\data\\Video Count Data4ChagarisTake2.xlsx"
   # bbox <- bbox
   # spplist <- spplist
   
   #--------------------------------import and prepare data------------------------------------------
-  # dat1 <- read_excel(path=file.gfsh, sheet='Count_Data')
-  # dat.lf <- read_excel(path=file.gfsh, sheet='Length_Data')
   dat.maxn <- read.csv(file.maxn, header=T)
   names(dat.maxn) <- tolower(names(dat.maxn))
   dat.lf <- read.csv(file.len, header=T)
@@ -69,7 +72,7 @@ fn.make_gfisher_videodataset <- function(file.maxn, file.env, file.len, bbox, fi
   #--------------------------create species to model groupings key-------------------------------------------
   # Read the whole spplist sheet (colIndex wide enough to include the MICE columns at ~44-45), then
   # promote the requested scheme's columns to the generic names 'modnumber'/'modname' used downstream.
-  modspp.raw = read.xlsx(file.spplist,sheetName="spplist",stringsAsFactors=F,colIndex=1:45)
+  modspp.raw = as.data.frame(readxl::read_excel(file.spplist, sheet="spplist"))   # readxl: no Java needed
   modspp.raw = modspp.raw[!is.na(modspp.raw$modnum),]
   # crosswalk ORIGINAL modnum -> scheme group number, for the hardcoded taxon fallbacks further down
   cw = unique(modspp.raw[,c('modnum', col.modnum)]); names(cw) = c('orig','scheme')
@@ -87,7 +90,7 @@ fn.make_gfisher_videodataset <- function(file.maxn, file.env, file.len, bbox, fi
   modgrps <- unique(spplist[!is.na(spplist$modnumber), c('modnumber','modname')])
 
   ##multistanza size at age-------------------------------------------------------------------------
-  sizeatage <- read.xlsx(file.spplist,sheetName="spp_stanzas_sizes",stringsAsFactors=F)
+  sizeatage <- as.data.frame(readxl::read_excel(file.spplist, sheet="spp_stanzas_sizes"))
   
   #keep species included in the model
   keeptaxa = tolower(sort(unique(spplist$taxon)))

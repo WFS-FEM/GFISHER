@@ -30,6 +30,7 @@ source(file.path('R','habitat_basemaps.R'))   # STAGE 1: sum-to-1 habitat basema
 dir.gfisher  <- getwd()
 res          <- 5          # map resolution in arc-minutes; 5 and 15 ship in data/bathymetry/
 group.scheme <- 'mice'     # species grouping scheme; see the SPECIES GROUPING SCHEME block
+seed         <- 1          # seed for the stage 2 length draws; NULL = unseeded (not reproducible)
 
 # Inputs that cannot ship with the repo (too large / FWRI data): the GFISHER East Universe
 # geodatabase and the three 3LABS survey CSVs. dir.data is the folder that holds them.
@@ -131,7 +132,7 @@ fn.plot_habitat_basemaps(dir.basemaps)
 maxn <- fn.make_gfisher_videodataset(file.maxn, file.env, file.len, bbox, file.spplist,
                                      col.modnum=group.cols[['modnum']],
                                      col.modname=group.cols[['modname']],
-                                     col.fg=group.cols[['fg']])
+                                     col.fg=group.cols[['fg']], seed=seed)
 
 #STAGE 3 -- FISH MAXN HEATMAPS----------------------------------------------------------------------
 # Outputs are scheme-tagged (.../maxn/<scheme>/) so different groupings coexist without clobbering.

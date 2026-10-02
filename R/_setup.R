@@ -9,7 +9,7 @@
 # the three affinity modules). Optional ones are only needed for non-default paths and are
 # reported, not required: mgcv for fn.make_habitat_basemaps(target='smooth'); terra, gstat,
 # lwgeom and maps for the retired R/legacy/habitat_maps_cellarea.R.
-GFISHER.PACKAGES <- c('sf', 'sp', 'raster', 'FNN', 'colorRamps', 'reshape2', 'truncnorm', 'xlsx')
+GFISHER.PACKAGES <- c('sf', 'sp', 'raster', 'FNN', 'colorRamps', 'reshape2', 'truncnorm', 'readxl')
 GFISHER.PACKAGES.OPTIONAL <- c('mgcv', 'terra', 'gstat', 'lwgeom', 'maps')
 
 #' Stop early, with one install line, if any required package is missing.
