@@ -63,7 +63,7 @@ Line numbers refer to the merged branch at commit `3e4dea1`.
 | R2 | `output/basemaps/` | Committed basemaps include seagrass (`SGR` mean about 0.012), which needs `seagrass_<res>min.asc` from the Ecospace maps tree. Without it the code runs with `SGR = 0` and cannot reproduce the committed layers. |
 | R3 | `.gitignore` vs `git ls-files` | 30 output files and 97 geodatabase files are tracked although `.gitignore` matches them. Two legacy geodatabases (`East_Master_Hab_data_Dissolve_byMicro_13Sept24.gdb`, `FWRI_East_Gulf_Mapping_2023.gdb`, about 200 MB) are referenced by no code. `data/Video Count Data4ChagarisTake2.xlsx` (14 MB) is referenced only in a comment. |
 | R4 | `output/affinity_selratio/` | Untagged output folder that no current code writes (current code writes `affinity_selratio_<scheme>/`). |
-| R5 | `R/selection_ratio_affinities.R`, `fn.build_effort_raster` | Stations lying exactly on a grid line are assigned to different cells on different machines (`raster::rasterize(fun='count')` boundary rule varies with package version). Found by the baseline run, section 4.1. |
+| R5 | `output/affinity_selratio_mice/GFISHER_survey_effort_5min_66x78.asc` | The committed effort raster was built on a template whose header has `CELLSIZE 0.0833333333329999` (the author's older Ecospace maps tree), while every other grid in the pipeline uses the exact 1/12 degree. Seven stations sit exactly on a 5-minute latitude line and fall on opposite sides of the boundary under the two templates. The current code is self-consistent (template = basemaps = depth grid); the committed file is simply from an older template. Found by the baseline run, section 4.1. |
 
 ### 3.3 Bugs and fragility
 
@@ -146,11 +146,17 @@ two files (about 44 KB each) to `data/seagrass/` so the basemaps can be reproduc
 same station total (14,613) but 14 cells differ by one station each, in seven pairs of
 vertically adjacent cells. Seven survey stations in the domain have a latitude exactly on a
 5-minute row boundary (28.50, 30.00, 26.50, 29.75, 30.00, 26.75, 28.25 deg N); the env file
-has 11 such stations and 25 on column boundaries overall. `raster::rasterize(fun='count')`
-assigned those boundary points to the row above on Dave's machine and the row below on
-Holden's, so the assignment depends on the raster/GDAL version. Fix in Phase 3: assign
-stations with `raster::cellFromXY()` (or an explicit half-open rule) so the result is the
-same on every machine, and document the rule.
+has 11 such stations and 25 on column boundaries overall. **Cause (settled 2 Oct 2026):**
+the committed file's header reads `CELLSIZE 0.0833333333329999`, while the basemaps, the
+MaxN maps and the depth grid all carry the exact `0.0833333333333333`. Dave's effort raster
+was therefore built on a template from his older Ecospace maps tree (the `input_ascii_sum1`
+layers), whose rounded cell size places those seven stations just above a row boundary;
+with the exact template they sit on the boundary and go to the row below. The same seven
+stations carry MaxN records in the single-stanza groups, and those maps are identical
+between Dave's run and ours, which confirms that the current code assigns boundary points
+consistently when the template is the same. No code change is needed; the committed file
+will simply be regenerated from the current template. A guard that the effort template
+matches the depth grid is cheap insurance and is included in Phase 3.
 
 A copy of the baseline outputs is kept outside the repo at
 `%LOCALAPPDATA%\Temp\gfisher_baseline\outputs_baseline_run\` with the MD5 tables
@@ -192,6 +198,62 @@ matter downstream (they feed stage 4), a deterministic alternative is to average
 over many seeds (the expected stanza composition) or to assign the expected fraction of each
 record to each stanza instead of drawing. **This is a methods decision for Dave, tracked in issue #5 (seed-sensitivity experiment
 across 10 seeds, compared with the bootstrap intervals); not changed in this PR.**
+
+### 4.1c Issue #5 experiment: ten seeds through stages 2, 3 and 4a (2 Oct 2026)
+
+Setup: seeds 1 to 10; stage 2 and 3 as in the driver (`fun=mean`, `background=0`); stage 4a
+against the committed `output/basemaps/5min` with 1,000 bootstrap draws per group, no prior
+constraints; outputs written outside the repo. 1.7 min per seed. Notes log and per-seed
+tables in `%LOCALAPPDATA%\Temp\gfisher_baseline\exp_issue5\`; summary in
+`summary_across_seeds.csv` (96 rows = 11 stanza groups x 8 layers).
+
+**Control.** The 7 single-stanza groups and red grouper 0 have exactly the same selection
+ratio and affinity in all ten seeds (range 0). Whatever moves below is the stanza draw alone.
+
+**How to read the numbers.** For each stanza group and habitat layer, "seed range" is the
+spread of the selection ratio across the ten seeds, and "bootstrap width" is the 95% interval
+the method already reports for sampling uncertainty. Ratio < 1 means the seed adds less
+uncertainty than the method already acknowledges. A is the 0 to 1 affinity Ecospace uses;
+"best layers" counts how many different layers came out on top (A = 1) across the ten seeds.
+
+| Group | MaxN>0 cells | seed range / bootstrap width, median (max) | A range, median (max) | distinct best layers in 10 seeds | rank agreement with seed 1, min Spearman |
+|---|---|---|---|---|---|
+| gag 0 | 39 | 0.41 (0.95) | 0.35 (0.95) | 3 | 0.36 |
+| gag 1 | 145 | 0.56 (0.92) | 0.18 (0.41) | 4 | 0.76 |
+| gag 2 | 190 | 0.49 (0.63) | 0.11 (0.26) | 4 | 0.86 |
+| gag 3 | 192 | 0.49 (0.95) | 0.15 (0.26) | 4 | 0.76 |
+| gag 4 | 176 | 0.35 (0.72) | 0.14 (0.34) | 2 | 0.81 |
+| gag 5+ | 342 | 0.31 (0.51) | 0.08 (0.17) | 1 | 0.98 |
+| red grouper 0 | 108 | 0 (0) | 0 (0) | 1 | 1.00 |
+| red grouper 1 | 10 | 2.23 (152) | 0.95 (0.97) | 4 | -0.25 |
+| red grouper 2 | 41 | 0.79 (11.4) | 0.41 (0.96) | 3 | 0.24 |
+| red grouper 3 | 162 | 0.40 (0.67) | 0.18 (0.69) | 2 | 0.76 |
+| red grouper 4 | 262 | 0.41 (0.56) | 0.18 (0.33) | 4 | 0.81 |
+| red grouper 5+ | 695 | 0.14 (0.21) | 0.03 (0.08) | 3 | 0.95 |
+
+Across all 96 group x layer rows, 88 have a seed range smaller than the bootstrap width
+(median ratio 0.43). The 8 exceptions all belong to red grouper 1 and red grouper 2.
+
+**Plain-language reading.**
+- For the well-sampled stanzas (gag 5+, red grouper 5+, red grouper 3 and 4, gag 1 to 4),
+  the seed moves the affinities by less than half of the uncertainty the method already
+  reports, the ranking of habitats barely changes, and the top habitat is stable or nearly so.
+  These outputs are robust to the draw.
+- For the two sparse young stanzas (red grouper 1 with 10 occupied cells, red grouper 2 with
+  41), the seed dominates: the affinity of a layer can swing from 0 to 1 and the "best"
+  habitat changes with the seed (red grouper 1: NL, NH, AH or AL depending on the draw).
+  These two groups' affinities are not robust as currently estimated. The code already pools
+  red grouper 1 with red grouper 0 for being sparse; red grouper 2 (41 cells) is not pooled.
+- gag 0 (39 cells) sits in between: the ratios are within the bootstrap width, but the top
+  habitat flips between NH and NL.
+
+**What this suggests for the decision in issue #5.** A fixed seed is sufficient for the
+well-sampled stanzas. For gag 0, red grouper 1 and red grouper 2 the answer depends on the
+draw, so either (a) average the stanza maps over many seeds before estimating affinities (the
+expected stanza composition), (b) raise the pooling threshold so stanzas with fewer than
+about 50 occupied cells borrow from their neighbour, or (c) assign each record's expected
+stanza fractions instead of drawing. Each gives a deterministic answer; which is appropriate
+is a modelling judgement for Dave.
 
 ### 4.2 Data not in the repository
 
