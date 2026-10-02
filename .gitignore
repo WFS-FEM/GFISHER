@@ -1,23 +1,32 @@
+# ---- machine / session files ------------------------------------------------------------------
 .DS_Store
 .Rhistory
+.RData
+.Rproj.user
+# written by a non-interactive Rscript run if any plot() escapes the interactive() guard
+Rplots.pdf
+# machine-specific path overrides; copy config.local.example.R to create one
+config.local.R
 
-# generated outputs from process GFISHER data.R (maps/ was moved under output/)
-output/maps/GFISHER/
-output/maps/5min/
-output/maps/15min/
-
-# generated habitat-affinity outputs (scheme-tagged, e.g. affinity_selratio_mice/)
-output/affinity_selratio*/
-
-# large local-only inputs (user supplies their own copy of the geodatabase)
+# ---- inputs that cannot ship --------------------------------------------------------------------
+# FWRI geodatabase + 3LABS survey CSVs (by request; see README > Getting the data)
+data/April2026/
 data/*.gdb/
 data/**/*.gdb/
-data/April2026/
-
-# generated species -> model-group lookup (written by fn.make_gfisher_videodataset;
-# scheme-tagged, e.g. GFISHER_species_fg_modnum_mice.csv)
+# data/dbseabed/ is TRACKED (4.4 MB of public grids; see data/dbseabed/SOURCE.md)
+# survey-taxon -> model-group key written by stage 2 (historical location beside the inputs)
 data/GFISHER_species_fg*.csv
+# raw video-count workbook superseded by the 3LABS CSVs; untracked Oct 2026, may still sit in local clones
+data/Video Count*.xlsx
 
-# author scratch
+# ---- generated outputs ---------------------------------------------------------------------------
+# Tracked deliverables (NOT ignored): output/basemaps/, output/maps/GFISHER/, output/affinity_*_<scheme>/.
+# Stage 1 overwrites output/basemaps/ in place so a rebuild shows up in git diff.
+# Retired legacy cell-area maps, written only if R/legacy/ is run deliberately:
+output/maps/5min/
+output/maps/15min/
+output/GFISHER_species_fg*.csv
+
+# ---- author scratch -------------------------------------------------------------------------------
 hoard/
 prompt.md
