@@ -57,28 +57,6 @@ fn.find_gdb <- function(dir, pattern = '^GFISHER_EAST_Universe.*\\.gdb$'){
 fn.dbseabed_files <- function(dir.dbseabed, codes = c('RCK', 'GVL', 'SND', 'MUD'))
   file.path(dir.dbseabed, paste0('Gmf_', codes), paste0('gmf_', codes, '_val.asc'))
 
-#' Download the raw dbSEABED grids (percent gravel, sand, mud and rock for the northern
-#' Gulf of Mexico, 1.2 arc-min) from CSDMS into `dir.out`, one Gmf_<CLS>/ folder each.
-#' Copied from EcospaceBasemap/R/dbSEABED_functions.R so the two repos fetch the same files.
-#' Source: https://csdms.colorado.edu/wiki/DBSEABED#Data_for_Modellers
-fn.pull_dbseabed <- function(dir.out){
-  urls <- paste0('https://csdms.colorado.edu/csdms_wiki/images/Gmf_',
-                 c('GVL', 'SND', 'MUD', 'RCK'), '.zip')
-  message('Downloading the dbSEABED grids (about 9 MB) from\n',
-          '  https://csdms.colorado.edu/wiki/DBSEABED#Data_for_Modellers\ninto ', dir.out)
-  op <- options(timeout = max(3600, getOption('timeout')))   # the default 60 s can be too short
-  on.exit(options(op), add = TRUE)
-  if(!dir.exists(dir.out)) dir.create(dir.out, recursive = TRUE)
-  for(u in urls){
-    z <- file.path(dir.out, basename(u))
-    download.file(u, destfile = z, mode = 'wb', quiet = TRUE)
-    unzip(z, exdir = file.path(dir.out, sub('\\.zip$', '', basename(u))))
-    unlink(z)
-  }
-  message('dbSEABED grids written to ', dir.out)
-  invisible(dir.out)
-}
-
 # Input manifest ---------------------------------------------------------------------
 #' One row per input the driver reads, with its resolved path, which stages need it,
 #' whether it is required, and where it comes from. `how` is one of:
@@ -110,7 +88,7 @@ fn.data_manifest <- function(dir.data, file.gdb, file.spplist, file.depth, dir.d
                source = 'FWRI 3LABS length file, ~13 MB. Same source.'),
     data.frame(key = 'dbseabed', stage = '1,4c', required = TRUE, how = 'repo',
                path = dir.dbseabed,
-               source = 'CSDMS dbSEABED raw grids (ship with the repo in data/dbseabed/, see its SOURCE.md). If removed: fn.pull_dbseabed(dir.dbseabed), or point dir.dbseabed at another copy (e.g. EcospaceBasemap/data/dbseabed).'),
+               source = 'CSDMS dbSEABED raw grids, tracked copy in data/dbseabed/ (MD5s in its SOURCE.md). If removed: git checkout -- data/dbseabed, or set dir.dbseabed (or dir.ecospace.basemap) to an EcospaceBasemap clone; EcospaceBasemap fn.pull_dbseabed() is the download path.'),
     data.frame(key = 'seagrass', stage = '1', required = FALSE, how = 'repo',
                path = file.seagrass,
                source = paste0('Seagrass raster on the ', res, '-min grid (~44 KB). The 5-min one ships in data/seagrass/ (from EcospaceBasemap; see its SOURCE.md); other resolutions must be made there. Without it SGR = 0.')),

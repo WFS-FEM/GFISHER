@@ -44,7 +44,8 @@ file.spplist <- file.path(dir.gfisher,'data','Master Species List.xlsx')
 # RAW dbSEABED grids (Gmf_<CLS>/gmf_<CLS>_val.asc at their native 1.2 arc-min), read by stages 1
 # and 4c. NOT the processed 5-min gmf_*_prop_*.asc layers, which renormalize rock against the
 # grain-size triangle and convert the -99 NODATA flag to zero. The grids ship with the repo
-# (data/dbseabed/SOURCE.md); the CSDMS download below is only a fallback if they are removed.
+# (data/dbseabed/SOURCE.md), byte-identical to EcospaceBasemap's copy, which is where they
+# are downloaded (its fn.pull_dbseabed()).
 dir.dbseabed <- file.path(dir.gfisher,'data','dbseabed')
 
 # Seagrass raster on the model grid, used by stage 1 (optional: without it SGR = 0).
@@ -75,16 +76,6 @@ file.len   <- file.path(dir.data,'lens3LABS_93to24.csv')
 file.depth <- list.files(dir.bathy, pattern=paste0('^depth ',res,'min.*\\.asc$'), full.names=TRUE)
 if(length(file.depth)!=1) stop("Expected one 'depth ",res,"min*.asc' raster in ",dir.bathy,
                                ", found ",length(file.depth))
-
-# Public dbSEABED grids download themselves into the default folder only; a custom
-# dir.dbseabed that is missing is reported by fn.check_inputs instead.
-if(dir.dbseabed == file.path(dir.gfisher,'data','dbseabed') &&
-   !all(file.exists(fn.dbseabed_files(dir.dbseabed)))){
-  ok <- try(fn.pull_dbseabed(dir.dbseabed), silent=TRUE)   # a failed download is reported by
-  if(inherits(ok, 'try-error'))                            # fn.check_inputs below, not fatal here
-    message('dbSEABED download failed (', trimws(conditionMessage(attr(ok, 'condition'))),
-            '). Point dir.dbseabed at an existing copy in config.local.R, or retry later.')
-}
 
 inputs <- fn.check_inputs(fn.data_manifest(dir.data, file.gdb, file.spplist, file.depth,
                                            dir.dbseabed, file.seagrass, res))

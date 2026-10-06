@@ -45,7 +45,7 @@ Input check
   survey_maxn   2        required manual   OK       .../data/April2026/maxn3LABS_93to24.csv
   survey_env    2,4      required manual   OK       .../data/April2026/env3LABS_93to24.csv
   survey_lens   2        required manual   OK       .../data/April2026/lens3LABS_93to24.csv
-  dbseabed      1,4c     required auto     OK       .../data/dbseabed
+  dbseabed      1,4c     required repo     OK       .../data/dbseabed
   seagrass      1        optional derived  OK       .../data/seagrass/seagrass_5min.asc
 ```
 
@@ -60,7 +60,7 @@ approximate.
 | `Master Species List.xlsx` (species to model-group key, size-at-age stanzas) | 220 KB | ships with the repo | `data/` |
 | `GFISHER_EAST_Universe_2026.gdb` (FWRI side-scan habitat mapping; layers `East_Master_Hab_Data_FINAL_2026`, `East_Master_Microgrid_Mapped_2026`) | 275 MB | **by request** from FWRI (Sean Keenan) or the repo author; cannot be redistributed on GitHub | `data/April2026/`, or set `dir.data` / `file.gdb` |
 | `maxn3LABS_93to24.csv`, `env3LABS_93to24.csv`, `lens3LABS_93to24.csv` (FWRI 3LABS video survey 1993 to 2024) | 42 MB | **by request**, same source | `data/April2026/`, or set `dir.data` |
-| dbSEABED raw grids `Gmf_{RCK,GVL,SND,MUD}/gmf_*_val.asc` | 4.4 MB | ships with the repo (public data from [CSDMS dbSEABED](https://csdms.colorado.edu/wiki/DBSEABED); provenance in `data/dbseabed/SOURCE.md`). `fn.pull_dbseabed()` re-downloads them if the folder is removed | `data/dbseabed/`, or set `dir.dbseabed` to another copy |
+| dbSEABED raw grids `Gmf_{RCK,GVL,SND,MUD}/gmf_*_val.asc` | 4.4 MB | ships with the repo (public data from [CSDMS dbSEABED](https://csdms.colorado.edu/wiki/DBSEABED); MD5s and provenance in `data/dbseabed/SOURCE.md`; byte-identical to EcospaceBasemap's copy, whose `fn.pull_dbseabed()` is the download path) | `data/dbseabed/`, or set `dir.dbseabed` or `dir.ecospace.basemap` |
 | `seagrass_5min.asc` (seagrass cover on the model grid, derived from [FWC Seagrass Habitat in Florida](https://geodata.myfwc.com/datasets/myfwc::seagrass-habitat-in-florida) by the `EcospaceBasemap` repo) | 44 KB | ships with the repo (provenance in `data/seagrass/SOURCE.md`); optional: without it the `SGR` layer is zero. No 15-minute version yet | `data/seagrass/`, or set `file.seagrass` |
 
 Expected `data/` tree once everything is in place:
