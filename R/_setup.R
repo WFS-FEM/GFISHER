@@ -2,7 +2,9 @@
 # Session setup for `process GFISHER data.R`: package check, plot device, input manifest.
 # Base R only, so it can run before any package is attached. Sourced once at the top of
 # the driver, after the repo-root check. Mirrors scripts/_setup.R in RedTideMaps and
-# R/data_setup_functions.R in EcospaceBasemap.
+# R/data_setup_functions.R in EcospaceBasemap. The inputs EcospaceBasemap produces (raw
+# dbSEABED grids, seagrass rasters, depth values) ship here as copies with MD5s in each
+# data/*/SOURCE.md; the download and rasterisation code lives only in EcospaceBasemap.
 
 # Packages ---------------------------------------------------------------------------
 # Required by the four live stages (R/habitat_basemaps.R, video_dataset.R, maxn_maps.R and
@@ -91,7 +93,7 @@ fn.data_manifest <- function(dir.data, file.gdb, file.spplist, file.depth, dir.d
                source = 'CSDMS dbSEABED raw grids, tracked copy in data/dbseabed/ (MD5s in its SOURCE.md). If removed: git checkout -- data/dbseabed, or set dir.dbseabed (or dir.ecospace.basemap) to an EcospaceBasemap clone; EcospaceBasemap fn.pull_dbseabed() is the download path.'),
     data.frame(key = 'seagrass', stage = '1', required = FALSE, how = 'repo',
                path = file.seagrass,
-               source = paste0('Seagrass raster on the ', res, '-min grid (~44 KB). The 5-min one ships in data/seagrass/ (from EcospaceBasemap; see its SOURCE.md); other resolutions must be made there. Without it SGR = 0.')),
+               source = paste0('Seagrass raster on the ', res, '-min grid. The 5- and 15-min ones ship in data/seagrass/ (copied from EcospaceBasemap; MD5s in SOURCE.md), or set dir.ecospace.basemap to read a clone. Other resolutions must be made there. Without it SGR = 0.')),
     stringsAsFactors = FALSE)
 }
 
@@ -107,6 +109,10 @@ fn.check_inputs <- function(manifest, stop.on.missing = TRUE){
   }, logical(1))
 
   cat('\nInput check\n', strrep('-', 100), '\n', sep = '')
+  cat(sprintf('  %-13s %s\n', 'basemap src',
+              if(exists('dir.ecospace.basemap') && !is.null(dir.ecospace.basemap))
+                paste0('EcospaceBasemap clone at ', dir.ecospace.basemap)
+              else 'copies shipped in data/ (dir.ecospace.basemap not set)'))
   cat(sprintf('  %-13s %-8s %-8s %-8s %s\n', 'input', 'stage', 'need', 'how', 'status / path'))
   for(i in seq_len(nrow(m)))
     cat(sprintf('  %-13s %-8s %-8s %-8s %s  %s\n', m$key[i], m$stage[i],
