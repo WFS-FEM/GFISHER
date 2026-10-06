@@ -18,9 +18,9 @@ fn.check_packages()                           # stops with an install.packages()
 fn.plot_device()                              # recording plot window when interactive on Windows
 
 # Map-building code is split by stage. The former 'R/GFISHER functions.R' was divided into
-# video_dataset.R / maxn_maps.R, with its cell-area habitat maps retired to R/legacy/.
-# Every call in these files is namespaced (raster::, sf::), so nothing needs terra attached;
-# the depth template is read with raster::raster() below. (terra is only used by R/legacy/.)
+# video_dataset.R / maxn_maps.R; its cell-area habitat maps were retired (README > Known
+# caveats says where they live now). Every call in these files is namespaced (raster::, sf::),
+# so nothing needs terra attached; the depth template is read with raster::raster() below.
 source(file.path('R','video_dataset.R'))      # STAGE 2: station x group MaxN table
 source(file.path('R','maxn_maps.R'))          # STAGE 3: per-group MaxN heatmaps
 source(file.path('R','habitat_basemaps.R'))   # STAGE 1: sum-to-1 habitat basemaps
@@ -115,7 +115,8 @@ group.cols <- group.schemes[[group.scheme]]
 #STAGE 1 -- HABITAT BASEMAPS------------------------------------------------------------------------
 # Nine layers summing to exactly 1 in every water cell: the six GFISHER reef classes, rock and
 # unconsolidated bottom from raw dbSeabed, and seagrass. See the header of R/habitat_basemaps.R
-# for what this changed relative to the retired cell-area maps (now in R/legacy/).
+# for what this changed relative to the retired cell-area maps (EcospaceBasemap
+# R/GFISHER functions.R is their terra port).
 #
 # dir.dbseabed and file.seagrass are set in the SETTINGS block above (overridable in config.local.R).
 dir.basemaps <- file.path(dir.gfisher,'output','basemaps',paste0(res,'min'))
@@ -126,11 +127,6 @@ basemaps <- fn.make_habitat_basemaps(depth=depth, file.gdb=file.gdb, dir.raw=dir
               target='stratum',    # borrow from the region x depth-bin mean; see header
               depth.max.reef=300)  # deepest cell in which GFISHER observed any reef class
 fn.plot_habitat_basemaps(dir.basemaps)
-
-# The retired cell-area maps, if you need to reproduce an older Ecospace run:
-#   source(file.path('R','legacy','habitat_maps_cellarea.R'))
-#   fn.make_GFISHER_habitat_maps(depth=depth, file.gdb=file.gdb, dir.maps=dir.maps)
-#   fn.plot_GFISHER_habitats(dir.maps=file.path(dir.maps,paste0(res,'min')))
 
 #STAGE 2 -- PREPARE VIDEO DATASET-------------------------------------------------------------------
 # Grouping columns come from the SPECIES GROUPING SCHEME block above, so the scheme is set in one place.

@@ -450,8 +450,8 @@ fn.make_habitat_basemaps <- function(depth, file.gdb, dir.raw, dir.out, file.sgr
 # One panel per layer, each stretched to its own maximum -- without that the reef classes are
 # invisible next to UNC, which occupies ~86% of the average cell. Reads the .asc files written
 # by fn.make_habitat_basemaps rather than taking the stack, so it can be re-run on saved output.
-# (The old fn.plot_GFISHER_habitats in R/legacy/ expects the superseded 'GFISHER_<CLS>_prop_*'
-# filenames and a microgrid footprint raster, and does not work here.)
+# (The retired fn.plot_GFISHER_habitats, deleted under issue #3, expected the superseded 'GFISHER_<CLS>_prop_*'
+# filenames and a microgrid footprint raster, and did not work here.)
 fn.plot_habitat_basemaps <- function(dir.maps, file.png=NULL, order=NULL){
   fs <- list.files(dir.maps, pattern='^habitat_.*\\.asc$', full.names=TRUE)
   fs <- fs[!grepl('aux\\.xml$', fs)]

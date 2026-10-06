@@ -22,9 +22,6 @@ data/Video Count*.xlsx
 # ---- generated outputs ---------------------------------------------------------------------------
 # Tracked deliverables (NOT ignored): output/basemaps/, output/maps/GFISHER/, output/affinity_*_<scheme>/.
 # Stage 1 overwrites output/basemaps/ in place so a rebuild shows up in git diff.
-# Retired legacy cell-area maps, written only if R/legacy/ is run deliberately:
-output/maps/5min/
-output/maps/15min/
 output/GFISHER_species_fg*.csv
 
 # ---- author scratch -------------------------------------------------------------------------------

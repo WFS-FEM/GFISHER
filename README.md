@@ -14,8 +14,8 @@ MaxN heatmaps, and habitat affinities for each model group. One driver script,
 | 4b Site-level affinities | `R/site_level_affinities.R` | Relative density by habitat class read at each video station |
 | 4c Substrate affinities | `R/substrate_affinities.R` | Rock / gravel / sand / mud affinities from the raw dbSEABED grids |
 
-`R/legacy/habitat_maps_cellarea.R` holds the retired cell-area habitat maps, kept so older
-Ecospace runs can be reproduced. It is not called by the driver.
+The retired cell-area habitat maps (`R/legacy/habitat_maps_cellarea.R`) were removed under
+issue #3; Known caveats says where they live now.
 
 Tested with R 4.5.1 on Windows 11 (October 2026). A full run takes about 16 minutes; reading
 the geodatabase in stage 1 is the slow part.
@@ -165,9 +165,13 @@ every water cell, and reef is forced to zero below 300 m. The header of
    grids share one template so the assignment is consistent within a run.
 4. **Windows plot windows.** Interactive runs on Windows open a recording graphics window;
    `Rscript` and other platforms skip it. Figures are written to files either way.
-5. **Legacy geodatabases.** Two older geodatabases (`East_Master_Hab_data_Dissolve_byMicro_13Sept24.gdb`,
-   `FWRI_East_Gulf_Mapping_2023.gdb`) were tracked until October 2026 and remain in git history.
-   They are inputs only to the retired legacy module and are not needed.
+5. **Legacy cell-area maps and geodatabases.** `R/legacy/habitat_maps_cellarea.R` (the
+   pre-August-2026 reef maps: reef area over scanned area, IDW fill, 200 m cutoff, no sum-to-1)
+   was deleted under issue #3. Its last version is in `main` at commit `62f7a08`
+   (`git show 62f7a08:R/legacy/habitat_maps_cellarea.R`), and `EcospaceBasemap`
+   `R/GFISHER functions.R` is its terra port (`anchor.zero='both'` reproduces it). The two
+   older geodatabases it read (`East_Master_Hab_data_Dissolve_byMicro_13Sept24.gdb`,
+   `FWRI_East_Gulf_Mapping_2023.gdb`) were untracked in October 2026 and remain in git history.
 
 ## Reproducibility
 
