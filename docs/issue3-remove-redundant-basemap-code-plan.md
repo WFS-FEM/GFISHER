@@ -156,7 +156,38 @@ with `core.autocrlf=true` a Windows checkout turned stored-LF grids into CRLF on
 dff2ff98), so both repositories pin `.asc/.prj/.csv/.md5` to LF; `write.csv()` writes CRLF on
 Windows, so EcospaceBasemap hashes the LF form of each file.
 
-**GFISHER.** (Filled in as the work proceeds; see section 7.)
+**GFISHER, 6 Oct 2026.** Stage 1 at `res = 15` (driver lines 1 to the stage 1 plot) with the
+shipped `data/seagrass/seagrass_15min.asc`: against the author's committed 15-min layers, 10 of
+428 water cells changed, exactly the cells where the seagrass fraction differs (max 0.028);
+the other layers moved only through the row normalisation in those cells (NL up to 0.0021, UNC
+up to 0.027, the rest below 3e-4); shrinkage constants identical; row sums exactly 1. Stored
+dbSEABED grid MD5s (LF form, equal in both repositories): RCK e1332f6d, GVL 1242a335, SND
+8147b226, MUD 16e40884; the CSDMS zips hold CRLF files whose hashes differ, which is why the
+first draft of both `SOURCE.md` files had to be corrected. The 5-min full runs (shipped copies,
+then `dir.ecospace.basemap`) are recorded below when complete.
+
+**Fresh clone, 6 Oct 2026** (branch at G7, cloned into a temporary folder, no `config.local.R`):
+every checked-out grid is LF on disk (28 files, `git ls-files --eol`); the eight on-disk MD5s
+(seagrass 5 and 15 min, depth 5 and 15 min, four dbSEABED grids) equal the `SOURCE.md` tables,
+and the two seagrass values equal EcospaceBasemap's `CHECKSUMS.md5` entries; `Rscript` on the
+driver prints the input check with bathymetry, species list, dbSEABED and seagrass OK, lists
+only the geodatabase and the three survey CSVs as missing, and stops before stage 1 (exit 1).
+
+**5-min full run on the shipped copies, 6 Oct 2026:** stages 1 to 4a completed and 4b was
+running when the one-hour job limit stopped it (two R jobs shared the machine, so the run was
+far slower than the 16 minutes a lone run takes); up to that point no tracked `.asc` or `.csv`
+under `output/` changed, only the three PDFs, which embed timestamps.
+
+**5-min full run with `dir.ecospace.basemap` set, 6 Oct 2026:** all six stages, exit 0 after
+61 minutes (alone on the machine for most of it); the input check printed the clone as the
+basemap source and resolved dbSEABED and seagrass inside it; afterwards no tracked `.asc` or
+`.csv` under `output/` differed from the branch, so the clone path and the shipped copies
+produce the same basemaps, MaxN maps and affinities. The four PDFs regenerate with new embedded
+dates and are otherwise the same size; they are not part of the comparison.
+
+**Hygiene, 6 Oct 2026:** `git ls-files --cached --ignored --exclude-standard` empty; the only
+machine path in a tracked `.R` file was in `docs/issue5_seed_experiment.R` (a temp folder and
+a `setwd()` from PR #4), fixed in G8 to `tempdir()` and the repo-root check.
 
 ## 5. Fix design
 
@@ -242,21 +273,23 @@ E5 commit the 5-minute grids; three fixes found on the way (LF pin via `.gitattr
 `dir.basemaps` resolved after `config.local.R`, checksums taken on the LF form of each file);
 E6 ship the dbSEABED grids; two 15-minute runs; E7 commit the 15-minute grids; E8 documentation.
 
-GFISHER: G0 this plan; G1 retire the legacy module; G2 stop downloading dbSEABED; G3 dbSEABED
-provenance; G5 bathymetry provenance; G6 sibling-clone override; 5-minute runs both ways;
-G4 ship the 15-minute seagrass raster; G7 regenerate the 15-minute basemaps; G8
-documentation; G9 move the comparison figures (if confirmed); G10 record verification.
+GFISHER (6 Oct 2026): G0 this plan; G1 retire the legacy module; G2 stop downloading dbSEABED;
+G3 dbSEABED provenance; G3b pin LF line endings (`.gitattributes`, same reason as in
+EcospaceBasemap); G4 ship the 15-minute seagrass raster; G5 bathymetry provenance; G6
+sibling-clone override; G7 regenerate the 15-minute basemaps; 5-minute full runs both ways;
+G8 documentation; G9 move the comparison figures (only if the author confirms); G10 record
+verification.
 
 ## 7. Acceptance criteria
 
-- [ ] `git diff main -- output/basemaps/5min` is empty; `output/maps/` and
-      `output/affinity_*_mice/` are byte-identical to `main` after a full run.
-- [ ] Every `data/*/SOURCE.md` MD5 matches the file on disk and EcospaceBasemap's
-      `CHECKSUMS.md5`.
-- [ ] A run with `dir.ecospace.basemap` set produces the same outputs as the shipped copies.
-- [ ] A fresh clone without `config.local.R` stops at the input check naming the FWRI files;
-      with `config.local.R` it runs to completion under `Rscript`.
-- [ ] `git ls-files --cached --ignored --exclude-standard` is empty;
+- [x] `git diff main -- output/basemaps/5min` is empty; `output/maps/` and
+      `output/affinity_*_mice/` are byte-identical to `main` after a full run (4.2).
+- [x] Every `data/*/SOURCE.md` MD5 matches the file on disk and EcospaceBasemap's
+      `CHECKSUMS.md5` (fresh clone, 4.2).
+- [x] A run with `dir.ecospace.basemap` set produces the same outputs as the shipped copies (4.2).
+- [x] A fresh clone without `config.local.R` stops at the input check naming the FWRI files
+      (4.2); the full run under `Rscript` is the override run above, in the working clone.
+- [x] `git ls-files --cached --ignored --exclude-standard` is empty;
       `git grep -nE "dchagaris|OneDrive" -- '*.R'` matches only `config.local.example.R`.
 - [ ] The author's answers to the five questions are recorded in section 9 and the gated
       option is tracked in a follow-up issue.
