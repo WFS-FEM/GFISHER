@@ -14,8 +14,8 @@ MaxN heatmaps, and habitat affinities for each model group. One driver script,
 | 4b Site-level affinities | `R/site_level_affinities.R` | Relative density by habitat class read at each video station |
 | 4c Substrate affinities | `R/substrate_affinities.R` | Rock / gravel / sand / mud affinities from the raw dbSEABED grids |
 
-`R/legacy/habitat_maps_cellarea.R` holds the retired cell-area habitat maps, kept so older
-Ecospace runs can be reproduced. It is not called by the driver.
+The retired cell-area habitat maps (`R/legacy/habitat_maps_cellarea.R`) were removed under
+issue #3; Known caveats says where they live now.
 
 Tested with R 4.5.1 on Windows 11 (October 2026). A full run takes about 16 minutes; reading
 the geodatabase in stage 1 is the slow part.
@@ -45,7 +45,7 @@ Input check
   survey_maxn   2        required manual   OK       .../data/April2026/maxn3LABS_93to24.csv
   survey_env    2,4      required manual   OK       .../data/April2026/env3LABS_93to24.csv
   survey_lens   2        required manual   OK       .../data/April2026/lens3LABS_93to24.csv
-  dbseabed      1,4c     required auto     OK       .../data/dbseabed
+  dbseabed      1,4c     required repo     OK       .../data/dbseabed
   seagrass      1        optional derived  OK       .../data/seagrass/seagrass_5min.asc
 ```
 
@@ -56,22 +56,30 @@ approximate.
 
 | Input | Size | How | Where it goes |
 |---|---|---|---|
-| Depth grids, 5 and 15 arc-min | 100 KB | ships with the repo | `data/bathymetry/` |
+| Depth grids, 5 and 15 arc-min | 100 KB | ships with the repo (values from `EcospaceBasemap` section 1, ETOPO 2022; MD5s and why the raster-written file is kept as the template in `data/bathymetry/SOURCE.md`) | `data/bathymetry/`, or set `dir.bathy` |
 | `Master Species List.xlsx` (species to model-group key, size-at-age stanzas) | 220 KB | ships with the repo | `data/` |
 | `GFISHER_EAST_Universe_2026.gdb` (FWRI side-scan habitat mapping; layers `East_Master_Hab_Data_FINAL_2026`, `East_Master_Microgrid_Mapped_2026`) | 275 MB | **by request** from FWRI (Sean Keenan) or the repo author; cannot be redistributed on GitHub | `data/April2026/`, or set `dir.data` / `file.gdb` |
 | `maxn3LABS_93to24.csv`, `env3LABS_93to24.csv`, `lens3LABS_93to24.csv` (FWRI 3LABS video survey 1993 to 2024) | 42 MB | **by request**, same source | `data/April2026/`, or set `dir.data` |
-| dbSEABED raw grids `Gmf_{RCK,GVL,SND,MUD}/gmf_*_val.asc` | 4.4 MB | ships with the repo (public data from [CSDMS dbSEABED](https://csdms.colorado.edu/wiki/DBSEABED); provenance in `data/dbseabed/SOURCE.md`). `fn.pull_dbseabed()` re-downloads them if the folder is removed | `data/dbseabed/`, or set `dir.dbseabed` to another copy |
-| `seagrass_5min.asc` (seagrass cover on the model grid, derived from [FWC Seagrass Habitat in Florida](https://geodata.myfwc.com/datasets/myfwc::seagrass-habitat-in-florida) by the `EcospaceBasemap` repo) | 44 KB | ships with the repo (provenance in `data/seagrass/SOURCE.md`); optional: without it the `SGR` layer is zero. No 15-minute version yet | `data/seagrass/`, or set `file.seagrass` |
+| dbSEABED raw grids `Gmf_{RCK,GVL,SND,MUD}/gmf_*_val.asc` | 4.4 MB | ships with the repo (public data from [CSDMS dbSEABED](https://csdms.colorado.edu/wiki/DBSEABED); MD5s and provenance in `data/dbseabed/SOURCE.md`; byte-identical to EcospaceBasemap's copy, whose `fn.pull_dbseabed()` is the download path) | `data/dbseabed/`, or set `dir.dbseabed` or `dir.ecospace.basemap` |
+| `seagrass_5min.asc`, `seagrass_15min.asc` (seagrass cover on the model grid, derived from [FWC Seagrass Habitat in Florida](https://geodata.myfwc.com/datasets/myfwc::seagrass-habitat-in-florida) by the `EcospaceBasemap` repo) | 50 KB | ship with the repo (byte copies of EcospaceBasemap's tracked outputs; MD5s in `data/seagrass/SOURCE.md`); optional: without one the `SGR` layer is zero | `data/seagrass/`, or set `file.seagrass` or `dir.ecospace.basemap` |
+
+Three of these inputs are produced by the sibling [`EcospaceBasemap`](https://github.com/WFS-FEM/EcospaceBasemap)
+repository, which builds the WFS Ecospace basemaps: the depth values, the seagrass rasters
+and the dbSEABED grids. They ship here as byte-identical copies so a clone runs on its own;
+each `SOURCE.md` records the MD5s and the EcospaceBasemap commit, and EcospaceBasemap's
+`output/<res>min/CHECKSUMS.md5` lists the same values. If you hold a clone of EcospaceBasemap,
+set `dir.ecospace.basemap` in `config.local.R` and the driver reads its files directly instead
+(all but the depth template; `data/bathymetry/SOURCE.md` says why).
 
 Expected `data/` tree once everything is in place:
 
 ```
 data/
-  bathymetry/            depth 5min 66x78.asc, depth 15min 22x26.asc, excl layer *.asc   (tracked)
+  bathymetry/            depth 5min 66x78.asc, depth 15min 22x26.asc, excl layer *.asc, SOURCE.md (tracked)
   Master Species List.xlsx                                                               (tracked)
   April2026/             GFISHER_EAST_Universe_2026.gdb/, maxn/env/lens 3LABS_93to24.csv (gitignored)
   dbseabed/              Gmf_RCK/ Gmf_GVL/ Gmf_SND/ Gmf_MUD/, SOURCE.md                   (tracked)
-  seagrass/              seagrass_5min.asc, SOURCE.md                                    (tracked; 15min not yet made)
+  seagrass/              seagrass_5min.asc, seagrass_15min.asc, SOURCE.md                (tracked)
 ```
 
 If you keep the FWRI files somewhere else (a shared drive, a OneDrive sync), do not copy them:
@@ -94,14 +102,16 @@ sources it after the defaults and before reading any input.
 | `file.gdb` | `NULL` | Geodatabase path; `NULL` finds the single `GFISHER_EAST_Universe*.gdb` in `dir.data` |
 | `dir.bathy` | `data/bathymetry` | Depth grids |
 | `file.spplist` | `data/Master Species List.xlsx` | Species list |
-| `dir.dbseabed` | `data/dbseabed` | Raw dbSEABED grids (ship with the repo); set only to use another copy |
-| `file.seagrass` | `NULL` | Seagrass raster; `NULL` = `data/seagrass/seagrass_<res>min.asc` |
-| `dir.ecospace.maps` | `NULL` | The author's external Ecospace maps tree; sets `file.seagrass` and `dir.ewemaps` the former way |
+| `dir.ecospace.basemap` | `NULL` | A clone of `EcospaceBasemap`; when set, `dir.dbseabed` and `file.seagrass` resolve inside it unless given explicitly |
+| `dir.dbseabed` | `NULL` | Raw dbSEABED grids; `NULL` = `<clone>/data/dbseabed` if `dir.ecospace.basemap` is set, else `data/dbseabed` |
+| `file.seagrass` | `NULL` | Seagrass raster; `NULL` = the clone's `seagrass_coverage_Seagrass_Statewide_<res>min.asc` if `dir.ecospace.basemap` is set, else `data/seagrass/seagrass_<res>min.asc` |
+| `dir.ecospace.maps` | `NULL` | The author's external Ecospace maps tree; only sets `dir.ewemaps` |
 | `dir.maps` | `output/maps` | Output root for stage 3 |
 | `dir.ewemaps` | `NULL` | Where MaxN heatmaps are written; `NULL` = `dir.maps` |
 
-The original author's setup is three lines in his `config.local.R`: `dir.dbseabed` and
-`dir.ecospace.maps` pointing at his existing trees, and nothing else.
+The original author's setup is two lines in his `config.local.R`: `dir.dbseabed` and
+`dir.ecospace.maps` pointing at his existing trees, and nothing else. A machine holding both
+repositories needs only `dir.ecospace.basemap`.
 
 ## Outputs
 
@@ -120,8 +130,11 @@ output/
   GFISHER_species_fg_<scheme>.csv   survey taxon -> model group key (gitignored)
 ```
 
-Stage 1 writes into `output/basemaps/` in place, so a rebuild shows up in `git diff`. That is
-deliberate: the basemaps are the versioned deliverable that feeds Ecospace.
+Stage 1 writes into `output/basemaps/` in place, so a rebuild shows up in `git diff`. These
+nine layers are what stage 4a reads. Whether they, or the ten-layer set that `EcospaceBasemap`
+builds (rock dissolved into the natural reef classes, sand/mud/gravel split, combined seagrass),
+are the basemap the WFS Ecospace model reads is an open question for the author; the two
+products and the options are compared in `docs/issue3-remove-redundant-basemap-code-plan.md`.
 
 The stage 1 panel figure:
 
@@ -156,18 +169,26 @@ every water cell, and reef is forced to zero below 300 m. The header of
    from it. Totals per station and species are exact; the split among stanzas changes with
    the seed. With `seed = 1` the run is reproducible, but the stanza-level maps remain one
    realisation of that draw. How much this matters for the affinities is tracked in issue #5.
-2. **Seagrass.** The shipped `data/seagrass/seagrass_5min.asc` comes from `EcospaceBasemap`.
-   The author's original basemaps used his own rasterisation of the same FWC layer; the two
-   agree in all but 45 of 3,838 water cells (seagrass fraction differs by up to 0.08 there).
-   The basemaps in this repo are built from the shipped file.
+2. **Seagrass.** The shipped `data/seagrass/seagrass_<res>min.asc` files come from
+   `EcospaceBasemap`. The author's original basemaps used his own rasterisations of the same
+   FWC layer; at 5 min the two agree in all but 45 of 3,838 water cells (seagrass fraction
+   differs by up to 0.08 there), and his 15-min raster was never available. The basemaps in
+   this repo, at both resolutions, are built from the shipped files, so the 15-min set differs
+   from the author's originals in its seagrass cells. EcospaceBasemap's own basemap uses a
+   different seagrass layer (the maximum of the FWC and NOAA GulfwideSAV layers); which one
+   the basemap should use is a question for the author (issue #3).
 3. **Stations on grid lines.** Eleven survey stations sit exactly on a 5-minute latitude line.
    Which cell they fall in depends on the template grid's header; the driver checks that all
    grids share one template so the assignment is consistent within a run.
 4. **Windows plot windows.** Interactive runs on Windows open a recording graphics window;
    `Rscript` and other platforms skip it. Figures are written to files either way.
-5. **Legacy geodatabases.** Two older geodatabases (`East_Master_Hab_data_Dissolve_byMicro_13Sept24.gdb`,
-   `FWRI_East_Gulf_Mapping_2023.gdb`) were tracked until October 2026 and remain in git history.
-   They are inputs only to the retired legacy module and are not needed.
+5. **Legacy cell-area maps and geodatabases.** `R/legacy/habitat_maps_cellarea.R` (the
+   pre-August-2026 reef maps: reef area over scanned area, IDW fill, 200 m cutoff, no sum-to-1)
+   was deleted under issue #3. Its last version is in `main` at commit `62f7a08`
+   (`git show 62f7a08:R/legacy/habitat_maps_cellarea.R`), and `EcospaceBasemap`
+   `R/GFISHER functions.R` is its terra port (`anchor.zero='both'` reproduces it). The two
+   older geodatabases it read (`East_Master_Hab_data_Dissolve_byMicro_13Sept24.gdb`,
+   `FWRI_East_Gulf_Mapping_2023.gdb`) were untracked in October 2026 and remain in git history.
 
 ## Reproducibility
 
@@ -176,3 +197,11 @@ every water cell, and reef is forced to zero below 300 m. The header of
   machine, October 2026).
 - Stages 2 to 4 are deterministic given `seed`.
 - MD5 comparison of outputs: `tools::md5sum(list.files("output/basemaps/5min", "\\.asc$", full.names=TRUE))`.
+  Grids and tables are stored and checked out with LF line endings (`.gitattributes`), so the
+  MD5 of a checked-out file equals the one git stores; a file freshly written by `raster` on
+  Windows has CRLF and hashes differently until it is committed and checked out again.
+- The shipped inputs match their producer: the MD5s in `data/*/SOURCE.md` equal the entries in
+  `EcospaceBasemap`'s `output/<res>min/CHECKSUMS.md5` (the dbSEABED grids are inputs there
+  too; its `data/dbseabed/SOURCE.md` lists the same values).
+- A run with `dir.ecospace.basemap` set produces the same outputs as a run on the shipped
+  copies (verified 6 Oct 2026; see the issue #3 plan document).

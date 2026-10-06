@@ -18,9 +18,9 @@ fn.check_packages()                           # stops with an install.packages()
 fn.plot_device()                              # recording plot window when interactive on Windows
 
 # Map-building code is split by stage. The former 'R/GFISHER functions.R' was divided into
-# video_dataset.R / maxn_maps.R, with its cell-area habitat maps retired to R/legacy/.
-# Every call in these files is namespaced (raster::, sf::), so nothing needs terra attached;
-# the depth template is read with raster::raster() below. (terra is only used by R/legacy/.)
+# video_dataset.R / maxn_maps.R; its cell-area habitat maps were retired (README > Known
+# caveats says where they live now). Every call in these files is namespaced (raster::, sf::),
+# so nothing needs terra attached; the depth template is read with raster::raster() below.
 source(file.path('R','video_dataset.R'))      # STAGE 2: station x group MaxN table
 source(file.path('R','maxn_maps.R'))          # STAGE 3: per-group MaxN heatmaps
 source(file.path('R','habitat_basemaps.R'))   # STAGE 1: sum-to-1 habitat basemaps
@@ -41,17 +41,24 @@ file.gdb     <- NULL       # NULL finds the single GFISHER_EAST_Universe*.gdb in
 dir.bathy    <- file.path(dir.gfisher,'data','bathymetry')
 file.spplist <- file.path(dir.gfisher,'data','Master Species List.xlsx')
 
+# Inputs produced by the sibling EcospaceBasemap repository. The repo ships byte-identical copies
+# (data/dbseabed/, data/seagrass/, each with a SOURCE.md giving MD5s), so nothing needs setting;
+# point dir.ecospace.basemap at a clone of EcospaceBasemap to read them from there instead.
+# dir.dbseabed and file.seagrass, if set, win over both.
+dir.ecospace.basemap <- NULL
+
 # RAW dbSEABED grids (Gmf_<CLS>/gmf_<CLS>_val.asc at their native 1.2 arc-min), read by stages 1
 # and 4c. NOT the processed 5-min gmf_*_prop_*.asc layers, which renormalize rock against the
-# grain-size triangle and convert the -99 NODATA flag to zero. The grids ship with the repo
-# (data/dbseabed/SOURCE.md); the CSDMS download below is only a fallback if they are removed.
-dir.dbseabed <- file.path(dir.gfisher,'data','dbseabed')
+# grain-size triangle and convert the -99 NODATA flag to zero. NULL = <clone>/data/dbseabed when
+# dir.ecospace.basemap is set, else data/dbseabed (EcospaceBasemap's fn.pull_dbseabed() is the
+# download path).
+dir.dbseabed <- NULL
 
 # Seagrass raster on the model grid, used by stage 1 (optional: without it SGR = 0).
-# NULL resolves to data/seagrass/seagrass_<res>min.asc, or to the author's Ecospace maps tree
-# when dir.ecospace.maps is set.
+# NULL = <clone>/output/<res>min/habitat/seagrass/seagrass_coverage_Seagrass_Statewide_<res>min.asc
+# when dir.ecospace.basemap is set, else data/seagrass/seagrass_<res>min.asc.
 file.seagrass     <- NULL
-dir.ecospace.maps <- NULL  # the author's external Ecospace maps tree; sets file.seagrass + dir.ewemaps
+dir.ecospace.maps <- NULL  # the author's external Ecospace maps tree; only sets dir.ewemaps now
 
 # Where outputs go. dir.ewemaps holds the stage 3 MaxN heatmaps (NULL = dir.maps).
 dir.maps     <- file.path(dir.gfisher,'output','maps')
@@ -65,8 +72,13 @@ if(file.exists('config.local.R')){
 
 #--------------------------- resolve derived paths and check inputs ---------------------------------
 if(is.null(file.gdb))      file.gdb <- fn.find_gdb(dir.data)
-if(is.null(file.seagrass)) file.seagrass <- if(!is.null(dir.ecospace.maps))
-  file.path(dir.ecospace.maps,'input_ascii_sum1',paste0(res,'min'),paste0('seagrass_',res,'min.asc')) else
+if(!is.null(dir.ecospace.basemap) && !dir.exists(dir.ecospace.basemap))
+  stop('dir.ecospace.basemap is set in config.local.R but does not exist: ', dir.ecospace.basemap)
+if(is.null(dir.dbseabed))  dir.dbseabed  <- if(!is.null(dir.ecospace.basemap))
+  file.path(dir.ecospace.basemap,'data','dbseabed') else file.path(dir.gfisher,'data','dbseabed')
+if(is.null(file.seagrass)) file.seagrass <- if(!is.null(dir.ecospace.basemap))
+  file.path(dir.ecospace.basemap,'output',paste0(res,'min'),'habitat','seagrass',
+            paste0('seagrass_coverage_Seagrass_Statewide_',res,'min.asc')) else
   file.path(dir.gfisher,'data','seagrass',paste0('seagrass_',res,'min.asc'))
 if(is.null(dir.ewemaps))   dir.ewemaps <- if(!is.null(dir.ecospace.maps)) dir.ecospace.maps else dir.maps
 file.maxn  <- file.path(dir.data,'maxn3LABS_93to24.csv')
@@ -75,16 +87,6 @@ file.len   <- file.path(dir.data,'lens3LABS_93to24.csv')
 file.depth <- list.files(dir.bathy, pattern=paste0('^depth ',res,'min.*\\.asc$'), full.names=TRUE)
 if(length(file.depth)!=1) stop("Expected one 'depth ",res,"min*.asc' raster in ",dir.bathy,
                                ", found ",length(file.depth))
-
-# Public dbSEABED grids download themselves into the default folder only; a custom
-# dir.dbseabed that is missing is reported by fn.check_inputs instead.
-if(dir.dbseabed == file.path(dir.gfisher,'data','dbseabed') &&
-   !all(file.exists(fn.dbseabed_files(dir.dbseabed)))){
-  ok <- try(fn.pull_dbseabed(dir.dbseabed), silent=TRUE)   # a failed download is reported by
-  if(inherits(ok, 'try-error'))                            # fn.check_inputs below, not fatal here
-    message('dbSEABED download failed (', trimws(conditionMessage(attr(ok, 'condition'))),
-            '). Point dir.dbseabed at an existing copy in config.local.R, or retry later.')
-}
 
 inputs <- fn.check_inputs(fn.data_manifest(dir.data, file.gdb, file.spplist, file.depth,
                                            dir.dbseabed, file.seagrass, res))
@@ -115,7 +117,8 @@ group.cols <- group.schemes[[group.scheme]]
 #STAGE 1 -- HABITAT BASEMAPS------------------------------------------------------------------------
 # Nine layers summing to exactly 1 in every water cell: the six GFISHER reef classes, rock and
 # unconsolidated bottom from raw dbSeabed, and seagrass. See the header of R/habitat_basemaps.R
-# for what this changed relative to the retired cell-area maps (now in R/legacy/).
+# for what this changed relative to the retired cell-area maps (EcospaceBasemap
+# R/GFISHER functions.R is their terra port).
 #
 # dir.dbseabed and file.seagrass are set in the SETTINGS block above (overridable in config.local.R).
 dir.basemaps <- file.path(dir.gfisher,'output','basemaps',paste0(res,'min'))
@@ -126,11 +129,6 @@ basemaps <- fn.make_habitat_basemaps(depth=depth, file.gdb=file.gdb, dir.raw=dir
               target='stratum',    # borrow from the region x depth-bin mean; see header
               depth.max.reef=300)  # deepest cell in which GFISHER observed any reef class
 fn.plot_habitat_basemaps(dir.basemaps)
-
-# The retired cell-area maps, if you need to reproduce an older Ecospace run:
-#   source(file.path('R','legacy','habitat_maps_cellarea.R'))
-#   fn.make_GFISHER_habitat_maps(depth=depth, file.gdb=file.gdb, dir.maps=dir.maps)
-#   fn.plot_GFISHER_habitats(dir.maps=file.path(dir.maps,paste0(res,'min')))
 
 #STAGE 2 -- PREPARE VIDEO DATASET-------------------------------------------------------------------
 # Grouping columns come from the SPECIES GROUPING SCHEME block above, so the scheme is set in one place.
@@ -164,8 +162,9 @@ if(!dir.exists(dir.aff)) dir.create(dir.aff, recursive=TRUE)
 # The MUD/SAND prior constraints that used to sit here are INERT against the basemaps, which
 # carry unconsolidated bottom as one UNC layer rather than a GVL/SND/MUD split. The constraint
 # machinery still exists (fn.constrain_w silently skips codes that are absent) -- it applies to
-# LEGACY.SPEC runs. For the rock/gravel/sand/mud split, use STAGE 4c below, which reads raw
-# dbSeabed at native resolution where that contrast actually exists.
+# LEGACY.SPEC runs against EcospaceBasemap's intermediate layers. For the rock/gravel/sand/mud
+# split, use STAGE 4c below, which reads raw dbSeabed at native resolution where that contrast
+# actually exists.
 affinity.constraints <- list(apply=FALSE)
 hab <- fn.load_layer_stack(dir.hab)           # spec defaults to BASEMAP.SPEC
 raster::compareRaster(hab, depth)             # effort and MaxN maps must share one grid (plan doc R5)

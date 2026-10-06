@@ -72,11 +72,14 @@ BASEMAP.SPEC <- data.frame(
   family  = c(rep('reef',6), rep('bottom',2)),
   stringsAsFactors = FALSE)
 
-# LEGACY.SPEC reads the retired input_ascii_sum1/ layers -- the cell-area reef proportions
-# and the processed gmf_*_val sediment layers. Kept so an older run can be reproduced, but
-# see R/habitat_basemaps.R and R/substrate_affinities.R for why both are superseded: the reef
-# proportions divide by cell area rather than scanned area, and the sediment layers
-# renormalize rock against the grain-size triangle and treat NODATA as zero.
+# LEGACY.SPEC matches the six 'GFISHER_<CLS>_prop_*' reef layers and the four 'gmf_<CLS>_val_*'
+# sediment layers. Today those names are EcospaceBasemap's INTERMEDIATE products
+# (output/<res>min/habitat/gfisher/ and habitat/dbseabed/: scanned-area reef proportions with
+# IDW fill, and raw dbSEABED aggregated to the grid with -99 as NA); before that they were the
+# author's retired input_ascii_sum1/ tree. Not a supported route here -- the reef family is
+# not shrunk and the sediment family is not normalised -- and nothing calls it; kept for
+# comparison runs against an EcospaceBasemap clone. See R/habitat_basemaps.R and
+# R/substrate_affinities.R for the routes that are used.
 LEGACY.SPEC <- data.frame(
   code    = c('AL','AM','AH','NL','NM','NH','RCK','GVL','SND','MUD'),
   pattern = c('AL_prop.*\\.asc$','AM_prop.*\\.asc$','AH_prop.*\\.asc$',

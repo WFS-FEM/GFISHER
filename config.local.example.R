@@ -42,24 +42,35 @@
 # file.gdb <- 'C:/path/to/GFISHER_EAST_Universe_2026.gdb'
 
 
+# A clone of the sibling EcospaceBasemap repository (https://github.com/WFS-FEM/EcospaceBasemap).
+# The inputs it produces ship with this repo as byte-identical copies (data/dbseabed/,
+# data/seagrass/, MD5s in each SOURCE.md), so this is optional. Set it to read them from the
+# clone instead: dir.dbseabed becomes <clone>/data/dbseabed and file.seagrass becomes
+# <clone>/output/<res>min/habitat/seagrass/seagrass_coverage_Seagrass_Statewide_<res>min.asc.
+# The two explicit settings below still win if set. The depth template is NOT taken from the
+# clone (data/bathymetry/SOURCE.md says why).
+# Default: NULL
+# dir.ecospace.basemap <- 'C:/Repos/WFS-FEM/EcospaceBasemap'
+
+
 # RAW dbSEABED grids (Gmf_<CLS>/gmf_<CLS>_val.asc for RCK, GVL, SND, MUD) used by stages 1
-# and 4c. They ship with the repo (data/dbseabed/, 4.4 MB, provenance in SOURCE.md); override
-# only to use another copy. If the default folder is ever emptied the driver tries to
-# re-download them from CSDMS with fn.pull_dbseabed().
-# Default: file.path(dir.gfisher, 'data', 'dbseabed')
-# dir.dbseabed <- 'C:/Repos/WFS-FEM/EcospaceBasemap/data/dbseabed'                      # a sibling repo
+# and 4c. They ship with the repo (data/dbseabed/, 4.4 MB, MD5s in SOURCE.md); override only
+# to use another copy. If the folder is ever emptied, `git checkout -- data/dbseabed` restores
+# it; EcospaceBasemap's fn.pull_dbseabed() is the download path.
+# Default: NULL = <dir.ecospace.basemap>/data/dbseabed if that is set, else data/dbseabed
 # dir.dbseabed <- 'C:/dchagaris/GitHub/WFS-FEM/EnvironmentalDrivers2EwE/data/dbSEABED'  # the author's layout
 
 
 # Seagrass raster on the model grid, used by stage 1. Optional: without it the SGR layer is
 # zero and the basemaps will not match the committed ones.
-# Default: NULL, which resolves to data/seagrass/seagrass_<res>min.asc, or, when
-# dir.ecospace.maps is set, to <dir.ecospace.maps>/input_ascii_sum1/<res>min/seagrass_<res>min.asc
-# file.seagrass <- 'C:/Repos/WFS-FEM/EcospaceBasemap/output/5min/habitat/seagrass/seagrass_coverage_Seagrass_Statewide_5min.asc'
+# Default: NULL = <dir.ecospace.basemap>/output/<res>min/habitat/seagrass/
+#   seagrass_coverage_Seagrass_Statewide_<res>min.asc if that is set, else
+#   data/seagrass/seagrass_<res>min.asc (5 and 15 min ship)
+# file.seagrass <- 'D:/somewhere/seagrass_5min.asc'
 
 
-# The author's external Ecospace maps tree. Setting it reproduces the former lookups:
-# seagrass from <tree>/input_ascii_sum1/<res>min/ and MaxN heatmaps written to <tree>/GFISHER/.
+# The author's external Ecospace maps tree. Setting it writes the MaxN heatmaps to <tree>/GFISHER/
+# (via dir.ewemaps); it no longer supplies the seagrass raster.
 # Default: NULL (everything stays inside the repo)
 # dir.ecospace.maps <- 'C:/Users/dchagaris/OneDrive - University of Florida/WFS Fisheries Ecosystem Modeling/WFS EwE/Ecospace/maps'
 
