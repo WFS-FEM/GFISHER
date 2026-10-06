@@ -1,9 +1,9 @@
 # Issue #5: how much do the stanza-group affinities move with the stage 2 seed?
 # Stages 2, 3 and 4a for seeds 1..10; everything written under the temp folder, nothing in the repo.
 suppressPackageStartupMessages(library(raster))
-setwd('C:/Repos/WFS-FEM/GFISHER')
+if(!file.exists('GFISHER.Rproj')) stop('Run from the repo root (open GFISHER.Rproj or setwd() there)')
 source('R/video_dataset.R'); source('R/maxn_maps.R'); source('R/selection_ratio_affinities.R')
-E <- 'C:/Users/User/AppData/Local/Temp/gfisher_baseline/exp_issue5'
+E <- file.path(tempdir(), 'exp_issue5'); dir.create(E, recursive=TRUE, showWarnings=FALSE)   # outside the repo
 note <- function(...) { msg <- paste0(format(Sys.time(), '%H:%M:%S'), '  ', paste0(...)); cat(msg, '\n'); cat(msg, '\n', file=file.path(E,'notes.log'), append=TRUE) }
 d <- 'data/April2026'; bbox <- c(latN=30.5, latS=25, lonW=-87.5, lonE=-81)
 depth <- raster('data/bathymetry/depth 5min 66x78.asc')
