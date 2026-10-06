@@ -1,2 +1,10 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+# Grids, projection sidecars and tables are checked out with LF on every platform, so the
+# MD5 of a file on disk equals the MD5 recorded in data/*/SOURCE.md and in EcospaceBasemap's
+# output/<res>min/CHECKSUMS.md5. Without this a Windows checkout (core.autocrlf=true) turns
+# them into CRLF and every checksum changes. raster::writeRaster() writes CRLF on Windows,
+# which git normalises on commit, so git diff stays clean after a regeneration.
+*.asc text eol=lf
+*.prj text eol=lf
+*.csv text eol=lf
